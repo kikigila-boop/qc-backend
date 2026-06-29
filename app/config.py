@@ -15,8 +15,10 @@ class Settings(BaseSettings):
     APP_NAME: str = "OTT QC Management System"
     DEBUG: bool = False
 
-    # Google Sheets (optional)
-    GOOGLE_SHEETS_CREDENTIALS_JSON: Optional[str] = None
+    # Google Sheets — OAuth2 (optional)
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_REFRESH_TOKEN: Optional[str] = None
     GOOGLE_SPREADSHEET_ID: Optional[str] = None
 
     class Config:

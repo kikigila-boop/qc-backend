@@ -1,9 +1,8 @@
 """
-Google Sheets sync service.
+Google Sheets sync service — OAuth2 refresh token auth.
 Runs as a background task after every write operation.
 Falls back gracefully if credentials are not configured.
 """
-import json
 import logging
 from typing import Optional, Tuple
 from ..config import settings
@@ -20,18 +19,24 @@ HEADERS = [
 
 
 def _get_service():
-    """Build and return the Sheets API service, or None if not configured."""
-    if not settings.GOOGLE_SHEETS_CREDENTIALS_JSON:
+    """Build Sheets API service using OAuth2 refresh token, or None if not configured."""
+    if not all([settings.GOOGLE_CLIENT_ID, settings.GOOGLE_CLIENT_SECRET, settings.GOOGLE_REFRESH_TOKEN]):
         return None
     try:
-        from google.oauth2.service_account import Credentials
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
         from googleapiclient.discovery import build
 
-        creds_dict = json.loads(settings.GOOGLE_SHEETS_CREDENTIALS_JSON)
-        creds = Credentials.from_service_account_info(
-            creds_dict,
+        creds = Credentials(
+            token=None,
+            refresh_token=settings.GOOGLE_REFRESH_TOKEN,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=settings.GOOGLE_CLIENT_ID,
+            client_secret=settings.GOOGLE_CLIENT_SECRET,
             scopes=["https://www.googleapis.com/auth/spreadsheets"],
         )
+        # Force token refresh
+        creds.refresh(Request())
         return build("sheets", "v4", credentials=creds, cache_discovery=False)
     except Exception as exc:
         logger.warning("Google Sheets client init failed: %s", exc)
@@ -40,7 +45,7 @@ def _get_service():
 
 def init_sheet() -> Tuple[Optional[str], Optional[str]]:
     """
-    Create a new Google Spreadsheet with a QC_Data tab + header row.
+    Create a new Google Spreadsheet with QC_Data tab + header row.
     Returns (spreadsheet_id, spreadsheet_url) or (None, None) on failure.
     """
     service = _get_service()
@@ -94,7 +99,7 @@ def init_sheet() -> Tuple[Optional[str], Optional[str]]:
 
 
 def _ensure_tab(service, spreadsheet_id: str):
-    """Create QC_Data tab if it doesn't exist yet."""
+    """Create QC_Data tab + headers if it doesn't exist yet."""
     try:
         meta = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
         tabs = [s["properties"]["title"] for s in meta.get("sheets", [])]
