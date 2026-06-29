@@ -15,10 +15,15 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS — adjust origins for production
+# CORS — explicit origins required when allow_credentials=True
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Lock down to your frontend domain in production
+    allow_origins=[
+        "https://qc-frontend-xi.vercel.app",
+        "https://qc-frontend-e6ikyliav-content-operation.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
