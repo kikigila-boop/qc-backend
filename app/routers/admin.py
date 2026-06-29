@@ -3,9 +3,7 @@ Admin endpoints — Google Sheets management, etc.
 Only accessible to users with role='admin'.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 
-from ..database import get_db
 from ..models.user import User
 from ..utils.security import get_current_user
 from ..config import settings
@@ -22,10 +20,12 @@ def _require_admin(current_user: User = Depends(get_current_user)):
 
 @router.get("/sheets/info")
 def sheets_info(_: User = Depends(_require_admin)):
-    """
-    Return current Google Sheets configuration status.
-    """
-    has_creds = bool(settings.GOOGLE_SHEETS_CREDENTIALS_JSON)
+    """Return current Google Sheets configuration status."""
+    has_creds = all([
+        settings.GOOGLE_CLIENT_ID,
+        settings.GOOGLE_CLIENT_SECRET,
+        settings.GOOGLE_REFRESH_TOKEN,
+    ])
     sheet_id = settings.GOOGLE_SPREADSHEET_ID
 
     return {
@@ -43,13 +43,13 @@ def sheets_info(_: User = Depends(_require_admin)):
 def sheets_init(_: User = Depends(_require_admin)):
     """
     Create a new Google Spreadsheet with QC_Data tab + headers.
-    Call this once after setting GOOGLE_SHEETS_CREDENTIALS_JSON.
-    Then copy the returned spreadsheet_id to GOOGLE_SPREADSHEET_ID env var in Railway.
+    Call this once. Then copy the returned spreadsheet_id to
+    GOOGLE_SPREADSHEET_ID env var in Railway.
     """
-    if not settings.GOOGLE_SHEETS_CREDENTIALS_JSON:
+    if not all([settings.GOOGLE_CLIENT_ID, settings.GOOGLE_CLIENT_SECRET, settings.GOOGLE_REFRESH_TOKEN]):
         raise HTTPException(
             status_code=400,
-            detail="GOOGLE_SHEETS_CREDENTIALS_JSON is not set. Add it to Railway environment variables first.",
+            detail="Google OAuth2 credentials not set. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN to Railway.",
         )
 
     sheet_id, sheet_url = init_sheet()
