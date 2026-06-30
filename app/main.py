@@ -22,10 +22,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://qc-frontend-xi.vercel.app",
-        "https://qc-frontend-e6ikyliav-content-operation.vercel.app",
         "http://localhost:3000",
         "http://localhost:3001",
     ],
+    # Cover all Vercel preview deploy URLs (*.vercel.app)
+    allow_origin_regex=r"https://qc-frontend-.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
