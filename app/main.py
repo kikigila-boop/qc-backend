@@ -1,13 +1,46 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from .database import Base, engine
 from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export
 from .models.push_subscription import PushSubscription  # noqa: F401 — ensures table is created
 from .models.notification import UserNotification  # noqa: F401 — ensures table is created
 from .config import settings
 
-# Create all tables
+
+def run_migrations():
+    """
+    Safely add any columns that may have been introduced after the initial
+    Railway deployment.  Uses IF NOT EXISTS so it is idempotent.
+    """
+    migrations = [
+        # qc_content table
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS qcid VARCHAR(20) UNIQUE",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS editor_name VARCHAR(100)",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS editor_id INTEGER REFERENCES users(id)",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS ingest_by VARCHAR(100)",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS ingest_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS revised_notes TEXT",
+        # qc_history table
+        "ALTER TABLE qc_history ADD COLUMN IF NOT EXISTS changed_by_name VARCHAR(100)",
+        # users table
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE",
+        # user_notifications table — created via create_all but guard just in case
+        "ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS url VARCHAR(500)",
+    ]
+    with engine.connect() as conn:
+        for stmt in migrations:
+            try:
+                conn.execute(text(stmt))
+            except Exception as e:
+                # Log but don't crash — column may already exist with a conflict
+                print(f"[migration] skipped: {stmt[:60]}… → {e}")
+        conn.commit()
+
+
+# Create all tables (new tables only), then patch missing columns
 Base.metadata.create_all(bind=engine)
+run_migrations()
 
 app = FastAPI(
     title=settings.APP_NAME,
