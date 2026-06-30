@@ -48,7 +48,7 @@ def get_unread_count(
     return {"count": count}
 
 
-@router.get("/", response_model=List[NotificationOut])
+@router.get("", response_model=List[NotificationOut])
 def list_notifications(
     limit: int = 30,
     db: Session = Depends(get_db),

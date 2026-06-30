@@ -25,7 +25,7 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 # ── Admin only ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=List[UserOut])
+@router.get("", response_model=List[UserOut])
 def list_users(
     db: Session = Depends(get_db),
     _: User = Depends(_require_admin),
@@ -34,7 +34,7 @@ def list_users(
     return db.query(User).order_by(User.created_at.desc()).all()
 
 
-@router.post("/", response_model=UserOut, status_code=201)
+@router.post("", response_model=UserOut, status_code=201)
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
