@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     APP_NAME: str = "OTT QC Management System"
     DEBUG: bool = False
 
+    # Web Push VAPID (optional)
+    VAPID_PUBLIC_KEY: Optional[str] = None
+    VAPID_PRIVATE_KEY: Optional[str] = None
+    VAPID_SUBJECT: str = "mailto:content@vplushort.com"
+
     # Google Sheets — OAuth2 (optional)
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None

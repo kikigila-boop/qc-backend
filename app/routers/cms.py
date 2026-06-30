@@ -18,9 +18,10 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models.user import User
 from ..models.qc_content import QCContent, QCHistory, StatusEnum
-from ..schemas.qc_content import CMSIngestRequest, QCContentOut, QCHistoryOut
+from ..schemas.qc_content import CMSIngestRequest, CMSRevisedRequest, QCContentOut, QCHistoryOut
 from ..utils.security import get_current_user
 from ..services.sheets_service import sync_row
+from ..services import push_service
 
 router = APIRouter(prefix="/cms", tags=["CMS"])
 
@@ -159,6 +160,55 @@ def mark_done_ingest(
     background_tasks.add_task(sync_row, row)
     return row
 
+
+
+
+@router.patch("/item/{qcid}/revised", response_model=QCContentOut)
+def mark_revised(
+    qcid: str,
+    payload: CMSRevisedRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    CMS marks a content item as 'Revised' — something is missing or incorrect.
+    Valid from 'Ready To Ingest' status.
+    Triggers a push notification to the editor.
+    """
+    content = db.query(QCContent).filter(QCContent.qcid == qcid.upper()).first()
+    if not content:
+        raise HTTPException(status_code=404, detail=f"No content found with QCID '{qcid}'")
+
+    if content.status not in (StatusEnum.READY_TO_INGEST, StatusEnum.DONE_INGEST):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot mark as Revised. Current status is '{content.status.value}'. "
+                f"Only 'Ready To Ingest' or 'Done Ingest' items can be revised."
+            ),
+        )
+
+    old_status = content.status
+    content.status = StatusEnum.REVISED
+    content.revised_notes = payload.revised_notes
+
+    _log(db, content.id, "status",
+         old_status.value, StatusEnum.REVISED.value,
+         user_id=current_user.id,
+         by_name=payload.operator_name)
+
+    _log(db, content.id, "revised_notes",
+         None, payload.revised_notes,
+         user_id=current_user.id,
+         by_name=payload.operator_name)
+
+    db.commit()
+    db.refresh(content)
+
+    row = _enrich(content)
+    background_tasks.add_task(sync_row, row)
+    return row
 
 @router.get("/item/{qcid}/history", response_model=List[QCHistoryOut])
 def get_item_history(

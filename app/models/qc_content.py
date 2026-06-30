@@ -18,6 +18,7 @@ class StatusEnum(str, enum.Enum):
     UPLOADING = "Uploading"
     READY_TO_INGEST = "Ready To Ingest"
     DONE_INGEST = "Done Ingest"
+    REVISED = "Revised"
 
 
 # Workflow order - used to validate transitions
@@ -68,6 +69,9 @@ class QCContent(Base):
     # CMS tracking - populated when CMS team marks Done Ingest
     ingest_by = Column(String(100))
     ingest_at = Column(DateTime(timezone=True))
+
+    # Revision tracking (set by CMS when content needs rework)
+    revised_notes = Column(Text)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())

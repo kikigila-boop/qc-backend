@@ -18,3 +18,4 @@ class User(Base):
     # Relationships
     qc_contents = relationship("QCContent", back_populates="editor_user")
     histories = relationship("QCHistory", back_populates="changed_by_user")
+    push_subscriptions = relationship("PushSubscription", back_populates="user", cascade="all, delete-orphan")

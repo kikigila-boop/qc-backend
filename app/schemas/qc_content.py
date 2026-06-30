@@ -61,6 +61,7 @@ class QCContentOut(BaseModel):
     editor_name: str                          # always present
     editor_id: Optional[int] = None
     ingest_by: Optional[str] = None          # CMS operator name
+    revised_notes: Optional[str] = None       # CMS revision note
     ingest_at: Optional[datetime] = None
     qc_date: datetime
     created_at: datetime
@@ -76,6 +77,12 @@ class QCContentDetail(QCContentOut):
 class CMSIngestRequest(BaseModel):
     """Payload sent by CMS operator to mark a content as Done Ingest."""
     operator_name: str   # name of the CMS person doing the ingest
+
+
+class CMSRevisedRequest(BaseModel):
+    """Payload sent by CMS operator to flag content as Revised (needs rework)."""
+    operator_name: str
+    revised_notes: str   # explain what's missing (e.g. "Subtitle Ep 3 belum ada")
 
 
 class QCContentFilter(BaseModel):

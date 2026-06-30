@@ -14,6 +14,7 @@ from ..schemas.qc_content import (
 from ..utils.security import get_current_user
 from ..services.qcid_service import maybe_assign_qcid
 from ..services.sheets_service import sync_row
+from ..services import push_service
 
 router = APIRouter(prefix="/qc", tags=["QC Content"])
 
@@ -223,6 +224,25 @@ def transition_status(
 
     row = _enrich(content, db)
     background_tasks.add_task(sync_row, row)
+
+    # Push notifications based on new status
+    title_short = content.title[:40] + ("…" if len(content.title) > 40 else "")
+    if content.status == StatusEnum.READY_TO_INGEST:
+        background_tasks.add_task(
+            push_service.send_push_to_role, db, "cms",
+            "📥 Item Siap Diingest",
+            f"{title_short} (QCID: {content.qcid or content.id}) sudah siap diingest.",
+            "/cms",
+        )
+    elif content.status == StatusEnum.DONE_INGEST:
+        if content.editor_id:
+            background_tasks.add_task(
+                push_service.send_push_to_users, db, [content.editor_id],
+                "✅ Ingest Selesai",
+                f"{title_short} telah berhasil diingest oleh tim CMS.",
+                f"/qc/{content.id}",
+            )
+
     return row
 
 
