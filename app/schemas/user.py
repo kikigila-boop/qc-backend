@@ -10,6 +10,16 @@ class UserCreate(BaseModel):
     role: str = "editor"
 
 
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class UserResetPassword(BaseModel):
+    new_password: str
+
+
 class UserOut(BaseModel):
     id: int
     name: str
