@@ -35,12 +35,20 @@ def _get_service():
             client_secret=settings.GOOGLE_CLIENT_SECRET,
             scopes=["https://www.googleapis.com/auth/spreadsheets"],
         )
-        # Force token refresh
         creds.refresh(Request())
         return build("sheets", "v4", credentials=creds, cache_discovery=False)
     except Exception as exc:
         logger.warning("Google Sheets client init failed: %s", exc)
         return None
+
+
+def _enum_val(v) -> str:
+    """Return the string value of an enum, or str(v) for plain values."""
+    if v is None:
+        return ""
+    if hasattr(v, "value"):
+        return str(v.value)
+    return str(v)
 
 
 def init_sheet() -> Tuple[Optional[str], Optional[str]]:
@@ -61,7 +69,6 @@ def init_sheet() -> Tuple[Optional[str], Optional[str]]:
         spreadsheet_id = spreadsheet["spreadsheetId"]
         spreadsheet_url = spreadsheet["spreadsheetUrl"]
 
-        # Write header row
         service.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
             range=f"{SHEET_TAB}!A1",
@@ -69,7 +76,6 @@ def init_sheet() -> Tuple[Optional[str], Optional[str]]:
             body={"values": [HEADERS]},
         ).execute()
 
-        # Bold + freeze header row
         sheet_id = spreadsheet["sheets"][0]["properties"]["sheetId"]
         service.spreadsheets().batchUpdate(
             spreadsheetId=spreadsheet_id,
@@ -121,7 +127,10 @@ def _ensure_tab(service, spreadsheet_id: str):
 def sync_row(row_data: dict) -> None:
     """
     Upsert a single QC record to Google Sheets.
-    Matches on QCID (column A). Appends if not found.
+
+    Column A key strategy:
+    - If QCID assigned → use real QCID; also look for old PENDING-{id} row to replace.
+    - If QCID not yet assigned → use "PENDING-{id}" as temporary key.
     """
     if not settings.GOOGLE_SPREADSHEET_ID:
         return
@@ -134,37 +143,47 @@ def sync_row(row_data: dict) -> None:
 
     try:
         sheet = service.spreadsheets()
-        result = sheet.values().get(
-            spreadsheetId=settings.GOOGLE_SPREADSHEET_ID,
-            range=f"{SHEET_TAB}!A:A",
-        ).execute()
-        existing = result.get("values", [])
 
-        qcid = row_data.get("qcid") or ""
-        row_num = None
-        for i, cell in enumerate(existing):
-            if cell and cell[0] == qcid:
-                row_num = i + 1
-                break
+        qcid = row_data.get("qcid") or None
+        db_id = row_data.get("id") or ""
+        pending_key = f"PENDING-{db_id}"
+        key_in_sheet = qcid if qcid else pending_key
+
+        # Build display row
+        status_str = _enum_val(row_data.get("status", ""))
+        qc_result_str = _enum_val(row_data.get("qc_result", ""))
 
         new_row = [
-            qcid,
+            key_in_sheet,
             row_data.get("title", ""),
             str(row_data.get("season", "")),
             str(row_data.get("episode", "")),
             row_data.get("duration") or "",
             row_data.get("cast") or "",
             row_data.get("storage_location") or "",
-            row_data.get("qc_result", ""),
-            str(row_data.get("status", "")),
+            qc_result_str,
+            status_str,
             row_data.get("editor_name", ""),
-            str(row_data.get("qc_date", "")),
-            str(row_data.get("created_at", "")),
-            str(row_data.get("updated_at", "")),
+            str(row_data.get("qc_date", "")) if row_data.get("qc_date") else "",
+            str(row_data.get("created_at", "")) if row_data.get("created_at") else "",
+            str(row_data.get("updated_at", "")) if row_data.get("updated_at") else "",
             row_data.get("notes") or "",
             row_data.get("ingest_by") or "",
             str(row_data.get("ingest_at", "")) if row_data.get("ingest_at") else "",
         ]
+
+        # Fetch existing col A to find row
+        result = sheet.values().get(
+            spreadsheetId=settings.GOOGLE_SPREADSHEET_ID,
+            range=f"{SHEET_TAB}!A:A",
+        ).execute()
+        existing = result.get("values", [])
+
+        row_num = None
+        for i, cell in enumerate(existing):
+            if cell and cell[0] in (key_in_sheet, pending_key):
+                row_num = i + 1
+                break
 
         if row_num:
             sheet.values().update(
@@ -181,7 +200,7 @@ def sync_row(row_data: dict) -> None:
                 body={"values": [new_row]},
             ).execute()
 
-        logger.info("Synced QCID=%s to Google Sheets (row=%s)", qcid, row_num or "new")
+        logger.info("Synced key=%s to Google Sheets (row=%s)", key_in_sheet, row_num or "new")
 
     except Exception as exc:
         logger.error("Google Sheets sync_row error: %s", exc)
