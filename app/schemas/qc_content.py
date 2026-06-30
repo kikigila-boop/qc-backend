@@ -112,6 +112,14 @@ class StatusCount(BaseModel):
     count: int
 
 
+class EditorStat(BaseModel):
+    editor_name: str
+    total: int
+    pass_count: int
+    not_pass_count: int
+    done_ingest: int
+
+
 class DashboardStats(BaseModel):
     total: int
     qc_process: int
@@ -122,3 +130,7 @@ class DashboardStats(BaseModel):
     weekly_progress: List[WeeklyProgress]
     monthly_progress: List[MonthlyProgress]
     by_status: List[StatusCount]
+    revised: int = 0
+    pass_rate: float = 0.0
+    avg_turnaround_days: Optional[float] = None
+    by_editor: List[EditorStat] = []
