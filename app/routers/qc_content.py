@@ -50,13 +50,15 @@ def _log_change(
 
 
 def _validate_workflow(current: StatusEnum, new: StatusEnum):
+    """Allow any forward movement in STATUS_ORDER (can skip steps, e.g. QC Done → Ready To Ingest)."""
+    if current not in STATUS_ORDER or new not in STATUS_ORDER:
+        raise HTTPException(status_code=400, detail=f"Invalid status value.")
     current_idx = STATUS_ORDER.index(current)
     new_idx = STATUS_ORDER.index(new)
-    if new_idx != current_idx + 1:
-        allowed_next = STATUS_ORDER[current_idx + 1].value if current_idx + 1 < len(STATUS_ORDER) else "None"
+    if new_idx <= current_idx:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid status transition. From '{current.value}' the only allowed next step is '{allowed_next}'.",
+            detail=f"Cannot go backwards. Current: '{current.value}'.",
         )
 
 
