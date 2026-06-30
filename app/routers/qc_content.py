@@ -62,7 +62,7 @@ def _validate_workflow(current: StatusEnum, new: StatusEnum):
 
 # ─── endpoints ──────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=QCContentOut, status_code=201)
+@router.post("", response_model=QCContentOut, status_code=201)
 def create_qc(
     payload: QCContentCreate,
     background_tasks: BackgroundTasks,
@@ -87,7 +87,7 @@ def create_qc(
     return {**row}
 
 
-@router.get("/", response_model=List[QCContentOut])
+@router.get("", response_model=List[QCContentOut])
 def list_qc(
     search: Optional[str] = Query(None),
     status: Optional[StatusEnum] = Query(None),
