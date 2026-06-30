@@ -21,7 +21,7 @@ from ..models.qc_content import QCContent, QCHistory, StatusEnum
 from ..schemas.qc_content import CMSIngestRequest, CMSRevisedRequest, QCContentOut, QCHistoryOut
 from ..utils.security import get_current_user
 from ..services.sheets_service import sync_row
-from ..services import push_service
+from ..services import push_service, notification_service
 
 router = APIRouter(prefix="/cms", tags=["CMS"])
 
@@ -208,6 +208,22 @@ def mark_revised(
 
     row = _enrich(content)
     background_tasks.add_task(sync_row, row)
+
+    # Notify the editor that their item was revised
+    if content.editor_id:
+        title_short = content.title[:40] + ("…" if len(content.title) > 40 else "")
+        notif_title = "🔄 Item Perlu Direvisi"
+        notif_body = f"{title_short} ditandai REVISED oleh CMS: {payload.revised_notes[:80]}"
+        notif_url = f"/qc/{content.id}"
+        background_tasks.add_task(
+            push_service.send_push_to_users, db, [content.editor_id],
+            notif_title, notif_body, notif_url,
+        )
+        background_tasks.add_task(
+            notification_service.create_for_users, db, [content.editor_id],
+            notif_title, notif_body, notif_url,
+        )
+
     return row
 
 @router.get("/item/{qcid}/history", response_model=List[QCHistoryOut])
