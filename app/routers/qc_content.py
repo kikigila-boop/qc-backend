@@ -215,6 +215,13 @@ def transition_status(
 
     _validate_workflow(content.status, payload.new_status)
 
+    # Only CMS or Admin can mark Done Ingest
+    if payload.new_status == StatusEnum.DONE_INGEST and current_user.role not in ("cms", "admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="Hanya tim CMS atau Admin yang dapat mengubah status ke Done Ingest.",
+        )
+
     old_status = content.status
     content.status = payload.new_status
     _log_change(db, content.id, "status", old_status.value, payload.new_status.value,
