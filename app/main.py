@@ -40,8 +40,13 @@ def run_migrations():
 
 
 # Create all tables (new tables only), then patch missing columns
-Base.metadata.create_all(bind=engine)
-run_migrations()
+try:
+    Base.metadata.create_all(bind=engine)
+    run_migrations()
+except Exception as _startup_err:
+    import traceback
+    print(f"[startup] WARNING: DB init error (app will still start): {_startup_err}")
+    traceback.print_exc()
 
 app = FastAPI(
     title=settings.APP_NAME,
