@@ -23,6 +23,22 @@ def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+# ── Public (authenticated) — editor list for dropdowns ──────────────────────
+
+@router.get("/editors", response_model=List[UserOut])
+def list_editors(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Return all active users with role editor or admin — used to populate dropdowns."""
+    return (
+        db.query(User)
+        .filter(User.role.in_(["editor", "admin"]), User.is_active == True)
+        .order_by(User.name)
+        .all()
+    )
+
+
 # ── Admin only ──────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[UserOut])
