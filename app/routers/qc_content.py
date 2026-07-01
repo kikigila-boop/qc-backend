@@ -72,7 +72,10 @@ def create_qc(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    content = QCContent(**payload.model_dump())
+    data = payload.model_dump()
+    if not data.get('qc_date'):
+        data['qc_date'] = datetime.utcnow()
+    content = QCContent(**data)
     db.add(content)
     db.flush()  # get ID before commit
 
@@ -235,9 +238,8 @@ def transition_status(
 
     # Notify CMS when status becomes Ready To Ingest
     if payload.new_status == StatusEnum.READY_TO_INGEST:
-        title_short = content.title[:40] + ("..." if len(content.title) > 40 else "")
         notif_title = "Konten Siap Diingest"
-        notif_body = f"{title_short} sudah Ready To Ingest."
+        notif_body = f"{content.title} - Eps {content.episode}"
         notif_url = f"/qc/{content.id}"
         background_tasks.add_task(
             push_service.send_push_to_role, db, "cms",
@@ -303,9 +305,8 @@ def revise_content(
 
     # Notify the editor
     if content.editor_id:
-        title_short = content.title[:40] + ("..." if len(content.title) > 40 else "")
         notif_title = "Konten Perlu Direvisi"
-        notif_body = f"{title_short} dikembalikan untuk revisi. Catatan: {payload.revised_notes[:60]}"
+        notif_body = f"{content.title} - Eps {content.episode}"
         notif_url = f"/qc/{content.id}"
         background_tasks.add_task(
             push_service.send_push_to_users, db, [content.editor_id],

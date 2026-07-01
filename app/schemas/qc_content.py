@@ -17,6 +17,7 @@ class QCContentCreate(BaseModel):
     cast: Optional[str] = None
     storage_location: Optional[str] = None
     notes: Optional[str] = None
+    qc_date: Optional[datetime] = None      # tanggal QC; default = hari ini
 
 
 class QCContentUpdate(BaseModel):
