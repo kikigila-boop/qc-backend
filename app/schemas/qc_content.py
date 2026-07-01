@@ -79,6 +79,12 @@ class CMSIngestRequest(BaseModel):
 
 
 
+class CMSRevisedRequest(BaseModel):
+    """Payload sent by CMS operator to mark content as Revised."""
+    operator_name: str
+    revised_notes: str
+
+
 class ReviseRequest(BaseModel):
     """Payload for marking content as Revised (from editor or CMS)."""
     revised_notes: str
