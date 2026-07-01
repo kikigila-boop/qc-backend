@@ -28,14 +28,15 @@ def run_migrations():
         # user_notifications table — created via create_all but guard just in case
         "ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS url VARCHAR(500)",
     ]
-    with engine.connect() as conn:
-        for stmt in migrations:
-            try:
+    # Each statement runs in its own connection/transaction.
+    # This prevents a single failure from aborting subsequent migrations.
+    for stmt in migrations:
+        try:
+            with engine.connect() as conn:
                 conn.execute(text(stmt))
-            except Exception as e:
-                # Log but don't crash — column may already exist with a conflict
-                print(f"[migration] skipped: {stmt[:60]}… → {e}")
-        conn.commit()
+                conn.commit()
+        except Exception as e:
+            print(f"[migration] skipped: {stmt[:60]}… → {e}")
 
 
 # Create all tables (new tables only), then patch missing columns
