@@ -16,26 +16,35 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 @router.get("/stats", response_model=DashboardStats)
 def get_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
 
-    def safe_count(q) -> int:
-        try:
-            return db.query(func.count(QCContent.id)).filter(q).scalar() or 0
-        except Exception:
-            return 0
+    # ── Status counts via single raw SQL query (avoids PostgreSQL enum cast issues) ─
+    status_counts: dict = {}
+    total = 0
+    try:
+        from sqlalchemy import text as sql_text
+        rows = db.execute(sql_text(
+            "SELECT status, COUNT(*) as cnt FROM qc_content GROUP BY status"
+        )).fetchall()
+        for row in rows:
+            status_counts[row[0]] = int(row[1])
+        total = sum(status_counts.values())
+    except Exception as e:
+        print(f"[dashboard] status count error: {e}")
 
     def count_status(s: StatusEnum) -> int:
-        return safe_count(QCContent.status == s)
-
-    # ── Totals ───────────────────────────────────────────────────────────────
-    try:
-        total = db.query(func.count(QCContent.id)).scalar() or 0
-    except Exception:
-        total = 0
+        # Match by enum value string (what's actually stored in DB)
+        return status_counts.get(s.value, 0)
 
     # ── Pass rate ─────────────────────────────────────────────────────────────
     try:
-        pass_count = safe_count(QCContent.qc_result == QCResult.PASS)
+        from sqlalchemy import text as sql_text
+        pc_rows = db.execute(sql_text(
+            "SELECT qc_result, COUNT(*) as cnt FROM qc_content GROUP BY qc_result"
+        )).fetchall()
+        qr_counts = {row[0]: int(row[1]) for row in pc_rows}
+        pass_count = qr_counts.get("PASS", 0)
         pass_rate = round((pass_count / total * 100), 1) if total > 0 else 0.0
-    except Exception:
+    except Exception as e:
+        print(f"[dashboard] pass_rate error: {e}")
         pass_count = 0
         pass_rate = 0.0
 
