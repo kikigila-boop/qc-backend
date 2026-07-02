@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract, case
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from ..database import get_db
@@ -80,8 +80,8 @@ def get_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)
     # ── Weekly progress — last 8 weeks ───────────────────────────────────────
     weekly = []
     for i in range(7, -1, -1):
-        week_start = datetime.now() - timedelta(weeks=i + 1)
-        week_end   = datetime.now() - timedelta(weeks=i)
+        week_start = datetime.now(timezone.utc) - timedelta(weeks=i + 1)
+        week_end   = datetime.now(timezone.utc) - timedelta(weeks=i)
         cnt = (
             db.query(func.count(QCContent.id))
             .filter(QCContent.created_at >= week_start, QCContent.created_at < week_end)
@@ -92,7 +92,7 @@ def get_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)
     # ── Monthly progress — last 6 months ─────────────────────────────────────
     monthly = []
     for i in range(5, -1, -1):
-        now   = datetime.now()
+        now   = datetime.now(timezone.utc)
         month = (now.month - i - 1) % 12 + 1
         year  = now.year if (now.month - i - 1) >= 0 else now.year - 1
         cnt = (
