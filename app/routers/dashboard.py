@@ -165,7 +165,7 @@ def get_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)
 
 
 @router.get("/debug-status")
-def debug_status(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def debug_status(db: Session = Depends(get_db)):
     """Temporary debug: show raw status values stored in DB."""
     from sqlalchemy import text as sql_text
     rows = db.execute(sql_text(
