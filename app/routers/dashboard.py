@@ -162,3 +162,16 @@ def get_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)
         monthly_progress=monthly,
         by_status=by_status,
     )
+
+
+@router.get("/debug-status")
+def debug_status(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Temporary debug: show raw status values stored in DB."""
+    from sqlalchemy import text as sql_text
+    rows = db.execute(sql_text(
+        "SELECT status, COUNT(*) as cnt FROM qc_content GROUP BY status ORDER BY cnt DESC"
+    )).fetchall()
+    return {
+        "raw_status_distribution": [{"status": row[0], "count": int(row[1])} for row in rows],
+        "total_rows": sum(int(r[1]) for r in rows),
+    }
