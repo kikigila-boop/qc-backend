@@ -32,7 +32,7 @@ def get_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)
 
     def count_status(s: StatusEnum) -> int:
         # Match by enum value string (what's actually stored in DB)
-        return status_counts.get(s.value, 0)
+        return status_counts.get(s.name, 0)  # DB stores enum names: QC_DONE, DONE_INGEST, etc.
 
     # ── Pass rate ─────────────────────────────────────────────────────────────
     try:
@@ -41,7 +41,7 @@ def get_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)
             "SELECT qc_result, COUNT(*) as cnt FROM qc_content GROUP BY qc_result"
         )).fetchall()
         qr_counts = {row[0]: int(row[1]) for row in pc_rows}
-        pass_count = qr_counts.get("PASS", 0)
+        pass_count = qr_counts.get("PASS", 0) + qr_counts.get("QCResult.PASS", 0)
         pass_rate = round((pass_count / total * 100), 1) if total > 0 else 0.0
     except Exception as e:
         print(f"[dashboard] pass_rate error: {e}")
@@ -93,9 +93,10 @@ def get_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)
                                      "not_pass_count": 0, "done_ingest": 0}
             e = editor_map[name]
             e["total"] += 1
-            if row.qc_result == QCResult.PASS or str(row.qc_result) == "PASS":
+            qr = str(row.qc_result)
+            if qr in ("PASS", "QCResult.PASS") or row.qc_result == QCResult.PASS:
                 e["pass_count"] += 1
-            elif row.qc_result == QCResult.NOT_PASS or str(row.qc_result) in ("NOT PASS", "NOT_PASS"):
+            elif qr in ("NOT_PASS", "NOT PASS", "QCResult.NOT_PASS") or row.qc_result == QCResult.NOT_PASS:
                 e["not_pass_count"] += 1
             if row.status == StatusEnum.DONE_INGEST:
                 e["done_ingest"] += 1
@@ -146,6 +147,7 @@ def get_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)
         monthly = []
 
     by_status = [{"status": s.value, "count": count_status(s)} for s in StatusEnum]
+    print(f"[dashboard] status_counts keys: {list(status_counts.keys())}")
 
     return DashboardStats(
         total=total,
