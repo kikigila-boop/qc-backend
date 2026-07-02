@@ -27,6 +27,9 @@ def run_migrations():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE",
         # user_notifications table — created via create_all but guard just in case
         "ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS url VARCHAR(500)",
+        # New status enum values (PostgreSQL ALTER TYPE, idempotent via IF NOT EXISTS)
+        "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'INGESTING'",
+        "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'NEED_REVISED'",
     ]
     # Each statement runs in its own connection/transaction.
     # This prevents a single failure from aborting subsequent migrations.

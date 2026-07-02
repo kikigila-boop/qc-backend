@@ -22,40 +22,33 @@ router = APIRouter(prefix="/qc", tags=["QC Content"])
 # ─── helpers ────────────────────────────────────────────────────────────────
 
 def _enrich(content: QCContent, db: Session) -> dict:
-    """Return a dict from model columns."""
-    data = {c.name: getattr(content, c.name) for c in content.__table__.columns}
-    return data
+    return {c.name: getattr(content, c.name) for c in content.__table__.columns}
 
 
-def _log_change(
-    db: Session,
-    content_id: int,
-    field: str,
-    old,
-    new,
-    user_id: int = None,
-    by_name: str = None,
-):
+def _log_change(db, content_id, field, old, new, user_id=None, by_name=None):
     if str(old) == str(new):
         return
-    history = QCHistory(
+    db.add(QCHistory(
         qc_content_id=content_id,
         changed_by_id=user_id,
         changed_by_name=by_name,
         field_name=field,
         old_value=str(old) if old is not None else None,
         new_value=str(new) if new is not None else None,
-    )
-    db.add(history)
+    ))
 
 
 def _validate_workflow(current: StatusEnum, new: StatusEnum):
     """
-    Allow any forward movement in STATUS_ORDER.
-    Special case: REVISED can go back to QC_PROCESS (editor re-submits after fixing).
+    Validate status transitions.
+    Normal: must move forward in STATUS_ORDER.
+    Special cases:
+      - REVISED → QC_PROCESS  (backward compat: editor re-submits old revised item)
+      - NEED_REVISED → READY_TO_INGEST  (editor re-submits after CMS revision request)
     """
-    # Special case: Revised → QC Process (editor re-submits after fixing)
     if current == StatusEnum.REVISED and new == StatusEnum.QC_PROCESS:
+        return
+    if current == StatusEnum.NEED_REVISED and new == StatusEnum.READY_TO_INGEST:
         return
     if current not in STATUS_ORDER or new not in STATUS_ORDER:
         raise HTTPException(status_code=400, detail="Invalid status value.")
@@ -68,8 +61,34 @@ def _validate_workflow(current: StatusEnum, new: StatusEnum):
         )
 
 
+def _notify_editor(db, content, background_tasks, title, body, url):
+    """Send in-app + push notification to the content's editor."""
+    editor_id = content.editor_id
+    if not editor_id and content.editor_name:
+        user = db.query(User).filter(
+            User.name == content.editor_name, User.is_active == True
+        ).first()
+        if user:
+            editor_id = user.id
+    if not editor_id:
+        return
+    try:
+        notification_service.create_for_users(db, [editor_id], title, body, url)
+    except Exception:
+        pass
+    background_tasks.add_task(push_service.send_push_to_users, db, [editor_id], title, body, url)
+
+
+def _notify_cms(db, content, background_tasks, title, body, url):
+    """Send in-app + push notification to the entire CMS role."""
+    try:
+        notification_service.create_for_role(db, "cms", title, body, url)
+    except Exception:
+        pass
+    background_tasks.add_task(push_service.send_push_to_role, db, "cms", title, body, url)
+
+
 # ─── endpoints ──────────────────────────────────────────────────────────────
-# NOTE: routes use "" (empty string), NOT "/" — required by redirect_slashes=False
 
 @router.post("", response_model=QCContentOut, status_code=201)
 def create_qc(
@@ -83,16 +102,12 @@ def create_qc(
         data['qc_date'] = datetime.utcnow()
     content = QCContent(**data)
     db.add(content)
-    db.flush()  # get ID before commit
-
+    db.flush()
     maybe_assign_qcid(content, db)
-
     _log_change(db, content.id, "created", None, "record created",
                 user_id=current_user.id, by_name=current_user.name)
-
     db.commit()
     db.refresh(content)
-
     row = _enrich(content, db)
     background_tasks.add_task(sync_row, row)
     return {**row}
@@ -114,18 +129,15 @@ def list_qc(
     _: User = Depends(get_current_user),
 ):
     q = db.query(QCContent)
-
     if search:
         like = f"%{search}%"
-        q = q.filter(
-            or_(
-                QCContent.qcid.ilike(like),
-                QCContent.title.ilike(like),
-                QCContent.episode.ilike(like),
-                QCContent.cast.ilike(like),
-                QCContent.editor_name.ilike(like),
-            )
-        )
+        q = q.filter(or_(
+            QCContent.qcid.ilike(like),
+            QCContent.title.ilike(like),
+            QCContent.episode.ilike(like),
+            QCContent.cast.ilike(like),
+            QCContent.editor_name.ilike(like),
+        ))
     if status:
         q = q.filter(QCContent.status == status)
     if qc_result:
@@ -140,33 +152,20 @@ def list_qc(
         q = q.filter(QCContent.qc_date >= date_from)
     if date_to:
         q = q.filter(QCContent.qc_date <= date_to)
-
     q = q.order_by(QCContent.updated_at.desc())
     items = q.offset((page - 1) * page_size).limit(page_size).all()
-
     return [_enrich(item, db) for item in items]
 
 
 @router.get("/{content_id}", response_model=QCContentDetail)
-def get_qc(
-    content_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
+def get_qc(content_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     content = db.query(QCContent).filter(QCContent.id == content_id).first()
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
-
     row = _enrich(content, db)
     row["histories"] = [
-        {
-            "id": h.id,
-            "field_name": h.field_name,
-            "old_value": h.old_value,
-            "new_value": h.new_value,
-            "changed_at": h.changed_at,
-            "changed_by_name": h.changed_by_name,
-        }
+        {"id": h.id, "field_name": h.field_name, "old_value": h.old_value,
+         "new_value": h.new_value, "changed_at": h.changed_at, "changed_by_name": h.changed_by_name}
         for h in content.histories
     ]
     return row
@@ -183,21 +182,17 @@ def update_qc(
     content = db.query(QCContent).filter(QCContent.id == content_id).first()
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
-
     if content.status == StatusEnum.DONE_INGEST:
         raise HTTPException(status_code=400, detail="Content dengan status 'Done Ingest' tidak bisa diedit.")
-
     update_data = payload.model_dump(exclude_unset=True)
     for field, new_val in update_data.items():
         old_val = getattr(content, field)
         _log_change(db, content.id, field, old_val, new_val,
                     user_id=current_user.id, by_name=current_user.name)
         setattr(content, field, new_val)
-
     maybe_assign_qcid(content, db)
     db.commit()
     db.refresh(content)
-
     row = _enrich(content, db)
     background_tasks.add_task(sync_row, row)
     return row
@@ -215,26 +210,27 @@ def transition_status(
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
 
-    # Only cms/admin can set Done Ingest
-    if payload.new_status == StatusEnum.DONE_INGEST and current_user.role not in ("cms", "admin"):
-        raise HTTPException(
-            status_code=403,
-            detail="Hanya tim CMS atau Admin yang dapat mengubah status ke Done Ingest.",
-        )
+    role = current_user.role
+
+    # Role guards for CMS-only transitions
+    if payload.new_status in (StatusEnum.INGESTING, StatusEnum.DONE_INGEST):
+        if role not in ("cms", "admin"):
+            raise HTTPException(
+                status_code=403,
+                detail="Hanya tim CMS atau Admin yang dapat mengubah status ke Ingesting / Done Ingest.",
+            )
 
     _validate_workflow(content.status, payload.new_status)
 
     old_status = content.status
     content.status = payload.new_status
 
-    # Track who did the ingest
     if payload.new_status == StatusEnum.DONE_INGEST:
         content.ingest_by = current_user.name
         content.ingest_at = datetime.utcnow()
 
     _log_change(db, content.id, "status", old_status.value, payload.new_status.value,
                 user_id=current_user.id, by_name=current_user.name)
-
     maybe_assign_qcid(content, db)
     db.commit()
     db.refresh(content)
@@ -242,19 +238,13 @@ def transition_status(
     row = _enrich(content, db)
     background_tasks.add_task(sync_row, row)
 
-    # Notify CMS when status becomes Ready To Ingest
+    notif_body = f"{content.title} - Eps {content.episode}"
+    notif_url = f"/qc/{content.id}"
+
+    # Notify CMS when ready to ingest (editor submitted) or re-submitted after Need Revised
     if payload.new_status == StatusEnum.READY_TO_INGEST:
-        notif_title = "Konten Siap Diingest"
-        notif_body = f"{content.title} - Eps {content.episode}"
-        notif_url = f"/qc/{content.id}"
-        background_tasks.add_task(
-            push_service.send_push_to_role, db, "cms",
-            notif_title, notif_body, notif_url,
-        )
-        background_tasks.add_task(
-            notification_service.create_for_role, db, "cms",
-            notif_title, notif_body, notif_url,
-        )
+        _notify_cms(db, content, background_tasks,
+                    "Konten Siap Diingest", notif_body, notif_url)
 
     return row
 
@@ -268,10 +258,8 @@ def revise_content(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Mark content as Revised.
-    - Editor: allowed when status is NOT Done Ingest or already Revised
-    - CMS: allowed only when status is Ready To Ingest or Done Ingest
-    - Admin: no restriction
+    CMS marks content as Need Revised during Ingesting.
+    Sets status to Need Revised and notifies the editor.
     """
     content = db.query(QCContent).filter(QCContent.id == content_id).first()
     if not content:
@@ -280,25 +268,27 @@ def revise_content(
     role = current_user.role
     current_status = content.status
 
-    if role == "editor":
-        if current_status in (StatusEnum.DONE_INGEST, StatusEnum.REVISED):
+    if role == "cms":
+        # CMS can only revise when status is Ingesting
+        if current_status != StatusEnum.INGESTING:
             raise HTTPException(
                 status_code=403,
-                detail=f"Editor tidak bisa revise konten dengan status '{current_status.value}'.",
+                detail=f"Tim CMS hanya bisa revisi saat status 'Ingesting'. "
+                       f"Status saat ini: '{current_status.value}'.",
             )
-    elif role == "cms":
-        if current_status not in (StatusEnum.READY_TO_INGEST, StatusEnum.DONE_INGEST):
-            raise HTTPException(
-                status_code=403,
-                detail=f"Tim CMS hanya bisa revise saat status 'Ready To Ingest' atau 'Done Ingest'. Status saat ini: '{current_status.value}'.",
-            )
+    elif role == "editor":
+        # Editor cannot initiate a revise — that comes from CMS
+        raise HTTPException(
+            status_code=403,
+            detail="Editor tidak bisa meminta revisi. Gunakan tombol di halaman detail untuk kirim ulang.",
+        )
     # admin: no restriction
 
     old_status = content.status
-    content.status = StatusEnum.REVISED
+    content.status = StatusEnum.NEED_REVISED
     content.revised_notes = payload.revised_notes
 
-    _log_change(db, content.id, "status", old_status.value, StatusEnum.REVISED.value,
+    _log_change(db, content.id, "status", old_status.value, StatusEnum.NEED_REVISED.value,
                 user_id=current_user.id, by_name=current_user.name)
     _log_change(db, content.id, "revised_notes", None, payload.revised_notes,
                 user_id=current_user.id, by_name=current_user.name)
@@ -309,54 +299,21 @@ def revise_content(
     row = _enrich(content, db)
     background_tasks.add_task(sync_row, row)
 
-    # Notify the editor — fallback: look up by editor_name if editor_id is null
-    notify_editor_id = content.editor_id
-    if not notify_editor_id and content.editor_name:
-        editor_user = db.query(User).filter(
-            User.name == content.editor_name,
-            User.is_active == True,
-        ).first()
-        if editor_user:
-            notify_editor_id = editor_user.id
-
-    if notify_editor_id:
-        notif_title = "Konten Perlu Direvisi"
-        notif_body = f"{content.title} - Eps {content.episode}"
-        notif_url = f"/qc/{content.id}"
-        # Create in-app notification synchronously (background task risks using closed session)
-        try:
-            notification_service.create_for_users(
-                db, [notify_editor_id], notif_title, notif_body, notif_url
-            )
-        except Exception:
-            pass
-        # Push notification is fine as background task (failure is non-critical)
-        background_tasks.add_task(
-            push_service.send_push_to_users, db, [notify_editor_id],
-            notif_title, notif_body, notif_url,
-        )
+    # Notify editor
+    notif_body = f"{content.title} - Eps {content.episode}"
+    notif_url = f"/qc/{content.id}"
+    _notify_editor(db, content, background_tasks, "Konten Perlu Direvisi", notif_body, notif_url)
 
     return row
 
 
 @router.get("/{content_id}/history", response_model=List[QCHistoryOut])
-def get_history(
-    content_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
+def get_history(content_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     content = db.query(QCContent).filter(QCContent.id == content_id).first()
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
-
     return [
-        {
-            "id": h.id,
-            "field_name": h.field_name,
-            "old_value": h.old_value,
-            "new_value": h.new_value,
-            "changed_at": h.changed_at,
-            "changed_by_name": h.changed_by_name,
-        }
+        {"id": h.id, "field_name": h.field_name, "old_value": h.old_value,
+         "new_value": h.new_value, "changed_at": h.changed_at, "changed_by_name": h.changed_by_name}
         for h in content.histories
     ]
