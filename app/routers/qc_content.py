@@ -50,7 +50,13 @@ def _log_change(
 
 
 def _validate_workflow(current: StatusEnum, new: StatusEnum):
-    """Allow any forward movement in STATUS_ORDER; block backwards moves."""
+    """
+    Allow any forward movement in STATUS_ORDER.
+    Special case: REVISED can go back to QC_PROCESS (editor re-submits after fixing).
+    """
+    # Special case: Revised → QC Process (editor re-submits after fixing)
+    if current == StatusEnum.REVISED and new == StatusEnum.QC_PROCESS:
+        return
     if current not in STATUS_ORDER or new not in STATUS_ORDER:
         raise HTTPException(status_code=400, detail="Invalid status value.")
     current_idx = STATUS_ORDER.index(current)
