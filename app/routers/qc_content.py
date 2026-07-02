@@ -309,17 +309,30 @@ def revise_content(
     row = _enrich(content, db)
     background_tasks.add_task(sync_row, row)
 
-    # Notify the editor
-    if content.editor_id:
+    # Notify the editor — fallback: look up by editor_name if editor_id is null
+    notify_editor_id = content.editor_id
+    if not notify_editor_id and content.editor_name:
+        editor_user = db.query(User).filter(
+            User.name == content.editor_name,
+            User.is_active == True,
+        ).first()
+        if editor_user:
+            notify_editor_id = editor_user.id
+
+    if notify_editor_id:
         notif_title = "Konten Perlu Direvisi"
         notif_body = f"{content.title} - Eps {content.episode}"
         notif_url = f"/qc/{content.id}"
+        # Create in-app notification synchronously (background task risks using closed session)
+        try:
+            notification_service.create_for_users(
+                db, [notify_editor_id], notif_title, notif_body, notif_url
+            )
+        except Exception:
+            pass
+        # Push notification is fine as background task (failure is non-critical)
         background_tasks.add_task(
-            push_service.send_push_to_users, db, [content.editor_id],
-            notif_title, notif_body, notif_url,
-        )
-        background_tasks.add_task(
-            notification_service.create_for_users, db, [content.editor_id],
+            push_service.send_push_to_users, db, [notify_editor_id],
             notif_title, notif_body, notif_url,
         )
 
