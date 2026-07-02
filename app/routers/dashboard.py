@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract, case
+from sqlalchemy import func, extract, text
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from ..database import get_db
 from ..models.user import User
-from ..models.qc_content import QCContent, StatusEnum
+from ..models.qc_content import QCContent, StatusEnum, QCResult
 from ..schemas.qc_content import DashboardStats
 from ..utils.security import get_current_user
 
@@ -16,97 +16,125 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 @router.get("/stats", response_model=DashboardStats)
 def get_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
 
+    def safe_count(q) -> int:
+        try:
+            return db.query(func.count(QCContent.id)).filter(q).scalar() or 0
+        except Exception:
+            return 0
+
     def count_status(s: StatusEnum) -> int:
-        return db.query(func.count(QCContent.id)).filter(QCContent.status == s).scalar() or 0
+        return safe_count(QCContent.status == s)
 
-    total = db.query(func.count(QCContent.id)).scalar() or 0
+    # ── Totals ───────────────────────────────────────────────────────────────
+    try:
+        total = db.query(func.count(QCContent.id)).scalar() or 0
+    except Exception:
+        total = 0
 
-    # ── Pass rate ────────────────────────────────────────────────────────────
-    pass_count = (
-        db.query(func.count(QCContent.id))
-        .filter(QCContent.qc_result == "PASS")
-        .scalar() or 0
-    )
-    pass_rate = round((pass_count / total * 100), 1) if total > 0 else 0.0
+    # ── Pass rate ─────────────────────────────────────────────────────────────
+    try:
+        pass_count = safe_count(QCContent.qc_result == QCResult.PASS)
+        pass_rate = round((pass_count / total * 100), 1) if total > 0 else 0.0
+    except Exception:
+        pass_count = 0
+        pass_rate = 0.0
 
-    # ── Revised count ────────────────────────────────────────────────────────
+    # ── Revised count ─────────────────────────────────────────────────────────
     revised = count_status(StatusEnum.REVISED)
 
-    # ── Avg turnaround (qc_date → ingest_at) in days ─────────────────────────
-    # Only items that have been ingested
+    # ── Avg turnaround (qc_date → ingest_at) in days ──────────────────────────
     avg_turnaround_days: Optional[float] = None
     try:
-        from sqlalchemy import cast, Float
-        from sqlalchemy.dialects.postgresql import INTERVAL
-
         rows = (
             db.query(QCContent.qc_date, QCContent.ingest_at)
             .filter(QCContent.ingest_at.isnot(None), QCContent.qc_date.isnot(None))
             .all()
         )
         if rows:
-            deltas = [(r.ingest_at - r.qc_date).total_seconds() / 86400 for r in rows if r.ingest_at > r.qc_date]
-            avg_turnaround_days = round(sum(deltas) / len(deltas), 1) if deltas else None
+            deltas = []
+            for r in rows:
+                try:
+                    diff = (r.ingest_at - r.qc_date).total_seconds() / 86400
+                    if diff > 0:
+                        deltas.append(diff)
+                except Exception:
+                    pass
+            if deltas:
+                avg_turnaround_days = round(sum(deltas) / len(deltas), 1)
     except Exception:
         avg_turnaround_days = None
 
-    # ── Per-editor breakdown ─────────────────────────────────────────────────
-    editor_rows = (
-        db.query(
-            QCContent.editor_name,
-            func.count(QCContent.id).label("total"),
-            func.sum(case((QCContent.qc_result == "PASS", 1), else_=0)).label("pass_count"),
-            func.sum(case((QCContent.qc_result == "NOT PASS", 1), else_=0)).label("not_pass_count"),
-            func.sum(case((QCContent.status == StatusEnum.DONE_INGEST, 1), else_=0)).label("done_ingest"),
+    # ── Per-editor breakdown — Python-side aggregation (no case() SQL) ────────
+    by_editor = []
+    try:
+        all_items = (
+            db.query(
+                QCContent.editor_name,
+                QCContent.qc_result,
+                QCContent.status,
+            )
+            .filter(QCContent.editor_name.isnot(None), QCContent.editor_name != "")
+            .all()
         )
-        .filter(QCContent.editor_name.isnot(None), QCContent.editor_name != "")
-        .group_by(QCContent.editor_name)
-        .order_by(func.count(QCContent.id).desc())
-        .limit(20)
-        .all()
-    )
+        editor_map: dict = {}
+        for row in all_items:
+            name = row.editor_name
+            if name not in editor_map:
+                editor_map[name] = {"editor_name": name, "total": 0, "pass_count": 0,
+                                     "not_pass_count": 0, "done_ingest": 0}
+            e = editor_map[name]
+            e["total"] += 1
+            if row.qc_result == QCResult.PASS or str(row.qc_result) == "PASS":
+                e["pass_count"] += 1
+            elif row.qc_result == QCResult.NOT_PASS or str(row.qc_result) in ("NOT PASS", "NOT_PASS"):
+                e["not_pass_count"] += 1
+            if row.status == StatusEnum.DONE_INGEST:
+                e["done_ingest"] += 1
 
-    by_editor = [
-        {
-            "editor_name": r.editor_name,
-            "total": r.total,
-            "pass_count": r.pass_count or 0,
-            "not_pass_count": r.not_pass_count or 0,
-            "done_ingest": r.done_ingest or 0,
-        }
-        for r in editor_rows
-    ]
+        by_editor = sorted(editor_map.values(), key=lambda x: x["total"], reverse=True)[:20]
+    except Exception as e:
+        print(f"[dashboard] by_editor error: {e}")
+        by_editor = []
 
-    # ── Weekly progress — last 8 weeks ───────────────────────────────────────
+    # ── Weekly progress — last 8 weeks ────────────────────────────────────────
     weekly = []
-    for i in range(7, -1, -1):
-        week_start = datetime.now(timezone.utc) - timedelta(weeks=i + 1)
-        week_end   = datetime.now(timezone.utc) - timedelta(weeks=i)
-        cnt = (
-            db.query(func.count(QCContent.id))
-            .filter(QCContent.created_at >= week_start, QCContent.created_at < week_end)
-            .scalar() or 0
-        )
-        weekly.append({"week_label": week_start.strftime("W%W"), "count": cnt})
+    try:
+        now = datetime.now(timezone.utc)
+        for i in range(7, -1, -1):
+            week_start = now - timedelta(weeks=i + 1)
+            week_end   = now - timedelta(weeks=i)
+            cnt = (
+                db.query(func.count(QCContent.id))
+                .filter(QCContent.created_at >= week_start, QCContent.created_at < week_end)
+                .scalar() or 0
+            )
+            weekly.append({"week_label": week_start.strftime("W%W"), "count": cnt})
+    except Exception as e:
+        print(f"[dashboard] weekly error: {e}")
+        weekly = [{"week_label": f"W{i}", "count": 0} for i in range(8)]
 
     # ── Monthly progress — last 6 months ─────────────────────────────────────
     monthly = []
-    for i in range(5, -1, -1):
-        now   = datetime.now(timezone.utc)
-        month = (now.month - i - 1) % 12 + 1
-        year  = now.year if (now.month - i - 1) >= 0 else now.year - 1
-        cnt = (
-            db.query(func.count(QCContent.id))
-            .filter(
-                extract("year",  QCContent.created_at) == year,
-                extract("month", QCContent.created_at) == month,
+    try:
+        now = datetime.now(timezone.utc)
+        for i in range(5, -1, -1):
+            month = (now.month - i - 1) % 12 + 1
+            year  = now.year if (now.month - i - 1) >= 0 else now.year - 1
+            cnt = (
+                db.query(func.count(QCContent.id))
+                .filter(
+                    extract("year",  QCContent.created_at) == year,
+                    extract("month", QCContent.created_at) == month,
+                )
+                .scalar() or 0
             )
-            .scalar() or 0
-        )
-        monthly.append({
-            "month_label": datetime(year, month, 1).strftime("%b %Y"),
-            "count": cnt,
-        })
+            monthly.append({
+                "month_label": datetime(year, month, 1).strftime("%b %Y"),
+                "count": cnt,
+            })
+    except Exception as e:
+        print(f"[dashboard] monthly error: {e}")
+        monthly = []
 
     by_status = [{"status": s.value, "count": count_status(s)} for s in StatusEnum]
 
