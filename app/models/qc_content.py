@@ -68,6 +68,7 @@ class QCContent(Base):
     duration         = Column(String(20))
     cast             = Column(Text)
     naming_asset     = Column(Text, nullable=True)   # Naming asset untuk ADI metadata
+    content_type     = Column(String(50), nullable=True)  # Microdrama / Series / Movies / Trailer
     storage_location = Column(String(200))
     notes            = Column(Text)
 
