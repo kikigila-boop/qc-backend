@@ -2,10 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from .database import Base, engine
-from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export, material, delivery
+from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export, material, delivery, request
 from .models.push_subscription import PushSubscription  # noqa: F401 — ensures table is created
 from .models.notification import UserNotification  # noqa: F401 — ensures table is created
 from .models.delivery import Delivery  # noqa: F401 — ensures table is created
+from .models.content_request import ContentRequest  # noqa: F401 — ensures table is created
 from .config import settings
 
 
@@ -38,6 +39,7 @@ def run_migrations():
         # Delivery feature
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverymethod') THEN CREATE TYPE deliverymethod AS ENUM ('HDD', 'GDrive', 'Aspera', 'Filezilla'); END IF; END $$",
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverystatus') THEN CREATE TYPE deliverystatus AS ENUM ('Pending', 'Confirmed'); END IF; END $$",
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'requeststatus') THEN CREATE TYPE requeststatus AS ENUM ('Pending', 'Approved', 'Rejected'); END IF; END $$",
     ]
     # Each statement runs in its own connection/transaction.
     # This prevents a single failure from aborting subsequent migrations.
@@ -95,6 +97,7 @@ app.include_router(notifications.router, prefix=API_PREFIX)
 app.include_router(material.router, prefix=API_PREFIX)
 app.include_router(export.router, prefix=API_PREFIX)
 app.include_router(delivery.router, prefix=API_PREFIX)
+app.include_router(request.router, prefix=API_PREFIX)
 
 
 @app.get("/", tags=["Health"])
