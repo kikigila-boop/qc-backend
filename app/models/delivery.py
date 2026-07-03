@@ -1,7 +1,6 @@
 import enum
 import uuid
-from sqlalchemy import Column, Integer, String, Date, Text, Enum as SAEnum, DateTime
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import Column, Integer, String, Date, Text, DateTime
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -30,7 +29,7 @@ class Delivery(Base):
     source_name      = Column(String(200), nullable=False)  # sub-option or free text
 
     # Delivery method
-    delivery_method  = Column(SAEnum(DeliveryMethod, name="deliverymethod", create_type=False), nullable=False)
+    delivery_method  = Column(String(50), nullable=False)
 
     # Links (GDrive/Aspera: 4 specific; others: 1 generic)
     link_video       = Column(Text, nullable=True)
@@ -45,8 +44,7 @@ class Delivery(Base):
     delivery_date    = Column(Date, nullable=False)
     notes            = Column(Text, nullable=True)
 
-    status           = Column(SAEnum(DeliveryStatus, name="deliverystatus", create_type=False),
-                               nullable=False, default=DeliveryStatus.PENDING)
+    status           = Column(String(50), nullable=False, default="Pending")
     confirmed_by     = Column(String(100), nullable=True)
     confirmed_at     = Column(DateTime(timezone=True), nullable=True)
     created_at       = Column(DateTime(timezone=True), server_default=func.now())

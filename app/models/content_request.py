@@ -1,6 +1,6 @@
 import enum
 import uuid
-from sqlalchemy import Column, Integer, String, Text, DateTime, Enum as SAEnum
+from sqlalchemy import Column, Integer, String, Text, DateTime
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -23,8 +23,7 @@ class ContentRequest(Base):
     content_titles   = Column(Text, nullable=False)   # JSON array as text
     total_eps        = Column(Integer, nullable=False)
 
-    status           = Column(SAEnum(RequestStatus, name="requeststatus", create_type=False),
-                               nullable=False, default=RequestStatus.PENDING)
+    status           = Column(String(50), nullable=False, default="Pending")
     rejection_notes  = Column(Text, nullable=True)
     approved_by      = Column(String(100), nullable=True)
     approved_at      = Column(DateTime(timezone=True), nullable=True)

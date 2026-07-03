@@ -66,6 +66,10 @@ def run_migrations():
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS mh_name VARCHAR(100)",
         "ALTER TABLE qc_content ALTER COLUMN editor_name DROP NOT NULL",
         # Enum types are created in run_enum_types() before create_all()
+        # Convert enum columns to VARCHAR if they are still PostgreSQL enum types
+        "ALTER TABLE deliveries ALTER COLUMN status TYPE VARCHAR(50) USING status::text",
+        "ALTER TABLE deliveries ALTER COLUMN delivery_method TYPE VARCHAR(50) USING delivery_method::text",
+        "ALTER TABLE content_requests ALTER COLUMN status TYPE VARCHAR(50) USING status::text",
     ]
     # Each statement runs in its own connection/transaction.
     # This prevents a single failure from aborting subsequent migrations.
