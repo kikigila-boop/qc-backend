@@ -8,12 +8,37 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.delivery import Delivery, DeliveryMethod, DeliveryStatus
+from app.models.delivery import Delivery
 from app.routers.auth import get_current_user
 from app.models.user import User
 
 router = APIRouter(prefix="/delivery", tags=["delivery"])
 
+# Canonical status constants
+STATUS_PENDING      = "Pending"
+STATUS_COPYING      = "Copying"
+STATUS_READY_TO_QC  = "Ready to QC"
+STATUS_CONFIRMED    = "Confirmed"
+
+def _normalize_status(raw) -> str:
+    """Normalize status to canonical form regardless of case or source."""
+    if raw is None:
+        return STATUS_PENDING
+    s = str(raw.value if hasattr(raw, 'value') else raw).strip()
+    mapping = {
+        "pending":     STATUS_PENDING,
+        "copying":     STATUS_COPYING,
+        "readytoqc":   STATUS_READY_TO_QC,
+        "ready to qc": STATUS_READY_TO_QC,
+        "ready_to_qc": STATUS_READY_TO_QC,
+        "confirmed":   STATUS_CONFIRMED,
+    }
+    return mapping.get(s.lower().replace(" ", "").replace("_", ""), s)
+
+def _normalize_method(raw) -> str:
+    if raw is None:
+        return ""
+    return str(raw.value if hasattr(raw, 'value') else raw).strip()
 
 # ── Schemas ────────────────────────────────────────────────────────────────
 
@@ -41,7 +66,7 @@ def _to_out(d: Delivery) -> dict:
         "sender_name":     d.sender_name,
         "source_category": d.source_category,
         "source_name":     d.source_name,
-        "delivery_method": d.delivery_method.value if hasattr(d.delivery_method, 'value') else d.delivery_method,
+        "delivery_method": _normalize_method(d.delivery_method),
         "link_video":      d.link_video,
         "link_trailer":    d.link_trailer,
         "link_poster":     d.link_poster,
@@ -50,7 +75,7 @@ def _to_out(d: Delivery) -> dict:
         "content_titles":  json.loads(d.content_titles) if d.content_titles else [],
         "delivery_date":   str(d.delivery_date),
         "notes":           d.notes,
-        "status":          d.status.value if hasattr(d.status, 'value') else d.status,
+        "status":          _normalize_status(d.status),
         "confirmed_by":    d.confirmed_by,
         "confirmed_at":    d.confirmed_at.isoformat() if d.confirmed_at else None,
         "created_at":      d.created_at.isoformat() if d.created_at else None,
@@ -68,7 +93,7 @@ def submit_delivery(payload: DeliverySubmit, db: Session = Depends(get_db)):
         sender_name     = payload.sender_name,
         source_category = payload.source_category,
         source_name     = payload.source_name,
-        delivery_method = DeliveryMethod(payload.delivery_method),
+        delivery_method = payload.delivery_method,
         link_video      = payload.link_video,
         link_trailer    = payload.link_trailer,
         link_poster     = payload.link_poster,
@@ -77,7 +102,7 @@ def submit_delivery(payload: DeliverySubmit, db: Session = Depends(get_db)):
         content_titles  = json.dumps(payload.content_titles, ensure_ascii=False),
         delivery_date   = date.fromisoformat(payload.delivery_date),
         notes           = payload.notes,
-        status          = DeliveryStatus.PENDING,
+        status          = STATUS_PENDING,
     )
     db.add(delivery)
     db.commit()
@@ -119,9 +144,10 @@ def start_copy(
     d = db.query(Delivery).filter(Delivery.id == delivery_id).first()
     if not d:
         raise HTTPException(404, "Delivery tidak ditemukan")
-    if d.status not in (DeliveryStatus.PENDING, DeliveryStatus.CONFIRMED):
-        raise HTTPException(400, f"Status saat ini: {d.status.value}. Harus Pending untuk mulai copy.")
-    d.status       = DeliveryStatus.COPYING
+    current = _normalize_status(d.status)
+    if current not in (STATUS_PENDING, STATUS_CONFIRMED):
+        raise HTTPException(400, f"Status saat ini: {current}. Harus Pending untuk mulai copy.")
+    d.status       = STATUS_COPYING
     d.confirmed_by = current_user.name
     d.confirmed_at = datetime.now(timezone.utc)
     db.commit()
@@ -141,9 +167,10 @@ def complete_copy(
     d = db.query(Delivery).filter(Delivery.id == delivery_id).first()
     if not d:
         raise HTTPException(404, "Delivery tidak ditemukan")
-    if d.status != DeliveryStatus.COPYING:
-        raise HTTPException(400, f"Status saat ini: {d.status.value}. Harus Copying untuk complete.")
-    d.status = DeliveryStatus.READY_TO_QC
+    current = _normalize_status(d.status)
+    if current != STATUS_COPYING:
+        raise HTTPException(400, f"Status saat ini: {current}. Harus Copying untuk complete.")
+    d.status = STATUS_READY_TO_QC
     db.commit()
     db.refresh(d)
     return _to_out(d)
@@ -161,7 +188,7 @@ def confirm_delivery(
     d = db.query(Delivery).filter(Delivery.id == delivery_id).first()
     if not d:
         raise HTTPException(404, "Delivery tidak ditemukan")
-    d.status       = DeliveryStatus.COPYING
+    d.status       = STATUS_COPYING
     d.confirmed_by = current_user.name
     d.confirmed_at = datetime.now(timezone.utc)
     db.commit()

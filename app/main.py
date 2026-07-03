@@ -70,6 +70,14 @@ def run_migrations():
         "ALTER TABLE deliveries ALTER COLUMN status TYPE VARCHAR(50) USING status::text",
         "ALTER TABLE deliveries ALTER COLUMN delivery_method TYPE VARCHAR(50) USING delivery_method::text",
         "ALTER TABLE content_requests ALTER COLUMN status TYPE VARCHAR(50) USING status::text",
+        # Normalize status to canonical case (fix PENDING → Pending, etc.)
+        "UPDATE deliveries SET status = 'Pending' WHERE LOWER(status) = 'pending'",
+        "UPDATE deliveries SET status = 'Copying' WHERE LOWER(status) = 'copying'",
+        "UPDATE deliveries SET status = 'Ready to QC' WHERE LOWER(status) IN ('ready to qc', 'ready_to_qc', 'readytoqc')",
+        "UPDATE deliveries SET status = 'Confirmed' WHERE LOWER(status) = 'confirmed'",
+        "UPDATE content_requests SET status = 'Pending' WHERE LOWER(status) = 'pending'",
+        "UPDATE content_requests SET status = 'Approved' WHERE LOWER(status) = 'approved'",
+        "UPDATE content_requests SET status = 'Rejected' WHERE LOWER(status) = 'rejected'",
     ]
     # Each statement runs in its own connection/transaction.
     # This prevents a single failure from aborting subsequent migrations.
