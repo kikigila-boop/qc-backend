@@ -156,7 +156,7 @@ def list_qc(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    q = db.query(QCContent)
+    q = db.query(QCContent).filter(QCContent.in_logbook == False)
     if search:
         like = f"%{search}%"
         q = q.filter(or_(

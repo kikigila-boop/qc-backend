@@ -79,6 +79,7 @@ class QCContentOut(BaseModel):
     revised_notes: Optional[str] = None
     naming_asset: Optional[str] = None
     content_type: Optional[str] = None
+    in_logbook: bool = False
     qc_date: datetime
     created_at: datetime
     updated_at: datetime

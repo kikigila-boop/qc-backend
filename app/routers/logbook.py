@@ -64,7 +64,7 @@ def get_traffic(db: Session = Depends(get_db), _: User = Depends(get_current_use
 # ─── Tab 2: QC Log ────────────────────────────────────────────────────────────
 @router.get("/qc")
 def get_qc_log(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    items = db.query(QCContent).order_by(QCContent.created_at.desc()).all()
+    items = db.query(QCContent).filter(QCContent.in_logbook == True).order_by(QCContent.created_at.desc()).all()
     result = []
     for item in items:
         histories = (
@@ -141,6 +141,60 @@ def reqc(
     db.commit()
     return {"message": "Re-QC berhasil", "id": item.id}
 
+
+
+
+# ─── Move single item to logbook ─────────────────────────────────────────────
+@router.post("/{content_id}/move")
+def move_to_logbook(
+    content_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in ("admin", "material_handling"):
+        raise HTTPException(403, "Akses ditolak")
+    item = db.query(QCContent).filter(QCContent.id == content_id).first()
+    if not item:
+        raise HTTPException(404, "Konten tidak ditemukan")
+    if str(item.status) != "Done Ingest":
+        raise HTTPException(400, "Hanya item Done Ingest yang bisa dipindah ke Log QC")
+    item.in_logbook = True
+    db.add(QCHistory(
+        qc_content_id=item.id,
+        changed_by_id=current_user.id,
+        changed_by_name=current_user.name,
+        field_name="in_logbook",
+        old_value="False",
+        new_value="True",
+    ))
+    db.commit()
+    return {"message": "Berhasil dipindah ke Log QC", "id": item.id}
+
+
+# ─── Bulk sync all Done Ingest → logbook ─────────────────────────────────────
+@router.post("/sync-to-logbook")
+def sync_all_to_logbook(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in ("admin", "material_handling"):
+        raise HTTPException(403, "Akses ditolak")
+    items = db.query(QCContent).filter(
+        QCContent.status == "Done Ingest",
+        QCContent.in_logbook == False,
+    ).all()
+    for item in items:
+        item.in_logbook = True
+        db.add(QCHistory(
+            qc_content_id=item.id,
+            changed_by_id=current_user.id,
+            changed_by_name=current_user.name,
+            field_name="in_logbook",
+            old_value="False",
+            new_value="True",
+        ))
+    db.commit()
+    return {"message": f"{len(items)} konten dipindah ke Log QC", "count": len(items)}
 
 # ─── Tab 3: Sync Library to Google Sheet ─────────────────────────────────────
 @router.post("/sync-library")

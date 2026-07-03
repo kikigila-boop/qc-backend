@@ -69,6 +69,7 @@ class QCContent(Base):
     cast             = Column(Text)
     naming_asset     = Column(Text, nullable=True)   # Naming asset untuk ADI metadata
     content_type     = Column(String(50), nullable=True)  # Microdrama / Series / Movies / Trailer
+    in_logbook       = Column(Boolean, nullable=False, default=False)  # Moved to Log QC
     storage_location = Column(String(200))
     notes            = Column(Text)
 

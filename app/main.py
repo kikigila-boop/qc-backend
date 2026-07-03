@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from apscheduler.schedulers.background import BackgroundScheduler
+from datetime import datetime, timedelta
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from .database import Base, engine
@@ -66,6 +68,7 @@ def run_migrations():
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS mh_name VARCHAR(100)",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS naming_asset TEXT",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS content_type VARCHAR(50)",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS in_logbook BOOLEAN DEFAULT FALSE",
         "ALTER TABLE qc_content ALTER COLUMN editor_name DROP NOT NULL",
         # Enum types are created in run_enum_types() before create_all()
         # Convert enum columns to VARCHAR if they are still PostgreSQL enum types
@@ -104,6 +107,38 @@ except Exception as _startup_err:
     import traceback
     print(f"[startup] WARNING: DB init error (app will still start): {_startup_err}")
     traceback.print_exc()
+
+def _auto_move_done_ingest():
+    """Every 24h: flag Done Ingest items older than 3 days as in_logbook=True."""
+    from .database import SessionLocal
+    from .models.qc_content import QCContent, QCHistory
+    db = SessionLocal()
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=3)
+        items = db.query(QCContent).filter(
+            QCContent.status == "Done Ingest",
+            QCContent.in_logbook == False,
+            QCContent.updated_at <= cutoff,
+        ).all()
+        for item in items:
+            item.in_logbook = True
+            db.add(QCHistory(
+                qc_content_id=item.id,
+                field_name="in_logbook",
+                old_value="False",
+                new_value="True (auto 3d)",
+            ))
+        if items:
+            db.commit()
+    except Exception as e:
+        import logging; logging.getLogger(__name__).error("auto_move error: %s", e)
+    finally:
+        db.close()
+
+_scheduler = BackgroundScheduler()
+_scheduler.add_job(_auto_move_done_ingest, "interval", hours=24, id="auto_logbook")
+_scheduler.start()
+
 
 app = FastAPI(
     title=settings.APP_NAME,
