@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from .database import Base, engine
-from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export, material, delivery, request
+from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export, material, delivery, request, logbook
 from .models.push_subscription import PushSubscription  # noqa: F401 — ensures table is created
 from .models.notification import UserNotification  # noqa: F401 — ensures table is created
 from .models.delivery import Delivery  # noqa: F401 — ensures table is created
@@ -143,6 +143,7 @@ app.include_router(material.router, prefix=API_PREFIX)
 app.include_router(export.router, prefix=API_PREFIX)
 app.include_router(delivery.router, prefix=API_PREFIX)
 app.include_router(request.router, prefix=API_PREFIX)
+app.include_router(logbook.router, prefix=API_PREFIX)
 
 
 @app.get("/", tags=["Health"])
