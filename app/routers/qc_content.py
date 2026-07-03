@@ -10,6 +10,7 @@ from ..models.qc_content import QCContent, QCHistory, StatusEnum, STATUS_ORDER
 from ..schemas.qc_content import (
     QCContentCreate, QCContentUpdate, QCContentOut,
     QCContentDetail, QCHistoryOut, StatusTransition, ReviseRequest,
+    ClaimRequest, MaterialReturnRequest,
 )
 from ..utils.security import get_current_user
 from ..services.qcid_service import maybe_assign_qcid
@@ -43,9 +44,12 @@ def _validate_workflow(current: StatusEnum, new: StatusEnum):
     Validate status transitions.
     Normal: must move forward in STATUS_ORDER.
     Special cases:
-      - REVISED → QC_PROCESS  (backward compat: editor re-submits old revised item)
-      - NEED_REVISED → READY_TO_INGEST  (editor re-submits after CMS revision request)
+      - MATERIAL_AVAIL → QC_PROCESS  (editor claims — handled via /material/claim)
+      - REVISED → QC_PROCESS         (backward compat)
+      - NEED_REVISED → READY_TO_INGEST  (editor re-submits after CMS revision)
     """
+    if current == StatusEnum.MATERIAL_AVAIL and new == StatusEnum.QC_PROCESS:
+        return
     if current == StatusEnum.REVISED and new == StatusEnum.QC_PROCESS:
         return
     if current == StatusEnum.NEED_REVISED and new == StatusEnum.READY_TO_INGEST:
@@ -100,6 +104,22 @@ def create_qc(
     data = payload.model_dump()
     if not data.get('qc_date'):
         data['qc_date'] = datetime.utcnow()
+
+    # Role-based initial status
+    if current_user.role == "material_handling":
+        data['status'] = StatusEnum.MATERIAL_AVAIL
+        data['mh_name'] = current_user.name
+        # editor_name can be blank when MH creates
+        if not data.get('editor_name'):
+            data['editor_name'] = None
+    else:
+        # Editor / Admin: direct QC pipeline
+        data['status'] = StatusEnum.QC_PROCESS
+        if not data.get('editor_name'):
+            data['editor_name'] = current_user.name
+        if not data.get('editor_id'):
+            data['editor_id'] = current_user.id
+
     content = QCContent(**data)
     db.add(content)
     db.flush()

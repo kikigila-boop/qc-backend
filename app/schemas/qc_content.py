@@ -9,7 +9,7 @@ class QCContentCreate(BaseModel):
     season: str
     episode: str
     qc_result: QCResult
-    editor_name: str                          # free-text, no account required
+    editor_name: Optional[str] = None         # nullable; MH creates before editor assigned
     editor_id: Optional[int] = None           # optional FK when editor has account
     status: StatusEnum = StatusEnum.QC_PROCESS
     # Optional
@@ -17,7 +17,15 @@ class QCContentCreate(BaseModel):
     cast: Optional[str] = None
     storage_location: Optional[str] = None
     notes: Optional[str] = None
-    qc_date: Optional[datetime] = None      # tanggal QC; default = hari ini
+    qc_date: Optional[datetime] = None        # tanggal QC; default = hari ini
+
+
+class ClaimRequest(BaseModel):
+    content_ids: List[int]
+
+
+class MaterialReturnRequest(BaseModel):
+    notes: str
 
 
 class QCContentUpdate(BaseModel):
@@ -59,7 +67,8 @@ class QCContentOut(BaseModel):
     notes: Optional[str]
     qc_result: QCResult
     status: StatusEnum
-    editor_name: str                          # always present
+    mh_name: Optional[str] = None            # Material Handling person who input this
+    editor_name: Optional[str] = None         # set when editor claims or creates directly
     editor_id: Optional[int] = None
     ingest_by: Optional[str] = None          # CMS operator name
     ingest_at: Optional[datetime] = None

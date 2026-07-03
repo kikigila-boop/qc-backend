@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from .database import Base, engine
-from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export
+from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export, material
 from .models.push_subscription import PushSubscription  # noqa: F401 — ensures table is created
 from .models.notification import UserNotification  # noqa: F401 — ensures table is created
 from .config import settings
@@ -30,6 +30,10 @@ def run_migrations():
         # New status enum values (PostgreSQL ALTER TYPE, idempotent via IF NOT EXISTS)
         "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'INGESTING'",
         "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'NEED_REVISED'",
+        "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'MATERIAL_AVAIL'",
+        "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'MATERIAL_REVISED'",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS mh_name VARCHAR(100)",
+        "ALTER TABLE qc_content ALTER COLUMN editor_name DROP NOT NULL",
     ]
     # Each statement runs in its own connection/transaction.
     # This prevents a single failure from aborting subsequent migrations.
