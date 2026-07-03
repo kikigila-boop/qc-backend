@@ -10,6 +10,22 @@ from .models.content_request import ContentRequest  # noqa: F401 — ensures tab
 from .config import settings
 
 
+def run_enum_types():
+    """Create custom PostgreSQL enum types before tables are created."""
+    enum_stmts = [
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverymethod') THEN CREATE TYPE deliverymethod AS ENUM ('HDD', 'GDrive', 'Aspera', 'Filezilla'); END IF; END $$",
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverystatus') THEN CREATE TYPE deliverystatus AS ENUM ('Pending', 'Confirmed'); END IF; END $$",
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'requeststatus') THEN CREATE TYPE requeststatus AS ENUM ('Pending', 'Approved', 'Rejected'); END IF; END $$",
+    ]
+    for stmt in enum_stmts:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text(stmt))
+                conn.commit()
+        except Exception as e:
+            print(f"[enum migration] skipped: {e}")
+
+
 def run_migrations():
     """
     Safely add any columns that may have been introduced after the initial
@@ -36,10 +52,7 @@ def run_migrations():
         "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'MATERIAL_REVISED'",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS mh_name VARCHAR(100)",
         "ALTER TABLE qc_content ALTER COLUMN editor_name DROP NOT NULL",
-        # Delivery feature
-        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverymethod') THEN CREATE TYPE deliverymethod AS ENUM ('HDD', 'GDrive', 'Aspera', 'Filezilla'); END IF; END $$",
-        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverystatus') THEN CREATE TYPE deliverystatus AS ENUM ('Pending', 'Confirmed'); END IF; END $$",
-        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'requeststatus') THEN CREATE TYPE requeststatus AS ENUM ('Pending', 'Approved', 'Rejected'); END IF; END $$",
+        # Enum types are created in run_enum_types() before create_all()
     ]
     # Each statement runs in its own connection/transaction.
     # This prevents a single failure from aborting subsequent migrations.
@@ -52,8 +65,9 @@ def run_migrations():
             print(f"[migration] skipped: {stmt[:60]}… → {e}")
 
 
-# Create all tables (new tables only), then patch missing columns
+# Startup sequence: enums first → tables → column patches
 try:
+    run_enum_types()
     Base.metadata.create_all(bind=engine)
     run_migrations()
 except Exception as _startup_err:
