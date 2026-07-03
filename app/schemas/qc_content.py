@@ -72,6 +72,7 @@ class QCContentOut(BaseModel):
     editor_id: Optional[int] = None
     ingest_by: Optional[str] = None          # CMS operator name
     ingest_at: Optional[datetime] = None
+    revised_notes: Optional[str] = None
     qc_date: datetime
     created_at: datetime
     updated_at: datetime
