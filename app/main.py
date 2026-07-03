@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -135,12 +134,23 @@ def _auto_move_done_ingest():
     finally:
         db.close()
 
-_scheduler = BackgroundScheduler()
-_scheduler.add_job(_auto_move_done_ingest, "interval", hours=24, id="auto_logbook")
-_scheduler.start()
+from contextlib import asynccontextmanager
 
+@asynccontextmanager
+async def lifespan(app):
+    # Start background scheduler safely
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        _scheduler = BackgroundScheduler()
+        _scheduler.add_job(_auto_move_done_ingest, "interval", hours=24, id="auto_logbook")
+        _scheduler.start()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("APScheduler not started: %s", e)
+    yield
 
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.APP_NAME,
     description="REST API for OTT Quality Control Management System",
     version="1.0.0",
