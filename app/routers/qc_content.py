@@ -185,6 +185,26 @@ def list_qc(
     return [_enrich(item, db) for item in items]
 
 
+# ─── Needs Naming endpoint (CMS worklist) ────────────────────────────────────
+@router.get("/needs-naming", response_model=List[QCContentOut])
+def list_needs_naming(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all content items where naming_asset is NULL or empty — for CMS tab."""
+    if current_user.role not in ("cms", "admin"):
+        raise HTTPException(403, "Akses ditolak")
+    items = (
+        db.query(QCContent)
+        .filter(
+            (QCContent.naming_asset == None) | (QCContent.naming_asset == "")
+        )
+        .order_by(QCContent.updated_at.desc())
+        .all()
+    )
+    return [_enrich(item, db) for item in items]
+
+
 @router.get("/{content_id}", response_model=QCContentDetail)
 def get_qc(content_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     content = db.query(QCContent).filter(QCContent.id == content_id).first()
