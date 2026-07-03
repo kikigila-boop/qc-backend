@@ -64,6 +64,19 @@ def get_traffic(db: Session = Depends(get_db), _: User = Depends(get_current_use
 # ─── Tab 2: QC Log ────────────────────────────────────────────────────────────
 @router.get("/qc")
 def get_qc_log(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    # Auto-flag Done Ingest items older than 3 days
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(days=3)
+    stale = db.query(QCContent).filter(
+        QCContent.status == "Done Ingest",
+        QCContent.in_logbook == False,
+        QCContent.updated_at <= cutoff,
+    ).all()
+    for item in stale:
+        item.in_logbook = True
+    if stale:
+        db.commit()
+
     items = db.query(QCContent).filter(QCContent.in_logbook == True).order_by(QCContent.created_at.desc()).all()
     result = []
     for item in items:
