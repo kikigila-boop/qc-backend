@@ -78,6 +78,9 @@ def run_migrations():
         "UPDATE content_requests SET status = 'Pending' WHERE LOWER(status) = 'pending'",
         "UPDATE content_requests SET status = 'Approved' WHERE LOWER(status) = 'approved'",
         "UPDATE content_requests SET status = 'Rejected' WHERE LOWER(status) = 'rejected'",
+        "ALTER TABLE content_requests ADD COLUMN IF NOT EXISTS sent_by VARCHAR(100)",
+        "ALTER TABLE content_requests ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE content_requests ADD COLUMN IF NOT EXISTS received_at TIMESTAMP WITH TIME ZONE",
     ]
     # Each statement runs in its own connection/transaction.
     # This prevents a single failure from aborting subsequent migrations.

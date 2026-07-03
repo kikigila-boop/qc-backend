@@ -6,9 +6,12 @@ from app.database import Base
 
 
 class RequestStatus(str, enum.Enum):
-    PENDING  = "Pending"
-    APPROVED = "Approved"
-    REJECTED = "Rejected"
+    PENDING   = "Pending"
+    APPROVED  = "Approved"
+    REJECTED  = "Rejected"
+    COPYING   = "Copying"
+    TERKIRIM  = "Terkirim"
+    DITERIMA  = "Diterima"
 
 
 class ContentRequest(Base):
@@ -20,11 +23,14 @@ class ContentRequest(Base):
     requestor_name   = Column(String(200), nullable=False)
     requestor_need   = Column(Text, nullable=False)
     source_requestor = Column(String(200), nullable=False)
-    content_titles   = Column(Text, nullable=False)   # JSON array as text
+    content_titles   = Column(Text, nullable=False)
     total_eps        = Column(Integer, nullable=False)
 
     status           = Column(String(50), nullable=False, default="Pending")
     rejection_notes  = Column(Text, nullable=True)
     approved_by      = Column(String(100), nullable=True)
     approved_at      = Column(DateTime(timezone=True), nullable=True)
+    sent_by          = Column(String(100), nullable=True)
+    sent_at          = Column(DateTime(timezone=True), nullable=True)
+    received_at      = Column(DateTime(timezone=True), nullable=True)
     created_at       = Column(DateTime(timezone=True), server_default=func.now())
