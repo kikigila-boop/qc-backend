@@ -12,20 +12,31 @@ from .config import settings
 
 def run_enum_types():
     """Create custom PostgreSQL enum types before tables are created."""
-    enum_stmts = [
+    # DO $$ ... $$ blocks — safe in normal transaction
+    do_stmts = [
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverymethod') THEN CREATE TYPE deliverymethod AS ENUM ('HDD', 'GDrive', 'Aspera', 'Filezilla'); END IF; END $$",
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverystatus') THEN CREATE TYPE deliverystatus AS ENUM ('Pending', 'Copying', 'Ready to QC', 'Confirmed'); END IF; END $$",
-        "ALTER TYPE deliverystatus ADD VALUE IF NOT EXISTS 'Copying'",
-        "ALTER TYPE deliverystatus ADD VALUE IF NOT EXISTS 'Ready to QC'",
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'requeststatus') THEN CREATE TYPE requeststatus AS ENUM ('Pending', 'Approved', 'Rejected'); END IF; END $$",
     ]
-    for stmt in enum_stmts:
+    for stmt in do_stmts:
         try:
             with engine.connect() as conn:
                 conn.execute(text(stmt))
                 conn.commit()
         except Exception as e:
             print(f"[enum migration] skipped: {e}")
+
+    # ALTER TYPE ADD VALUE requires AUTOCOMMIT — cannot run inside a transaction
+    alter_stmts = [
+        "ALTER TYPE deliverystatus ADD VALUE IF NOT EXISTS 'Copying'",
+        "ALTER TYPE deliverystatus ADD VALUE IF NOT EXISTS 'Ready to QC'",
+    ]
+    for stmt in alter_stmts:
+        try:
+            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+                conn.execute(text(stmt))
+        except Exception as e:
+            print(f"[enum alter] skipped: {e}")
 
 
 def run_migrations():
