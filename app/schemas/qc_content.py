@@ -15,6 +15,7 @@ class QCContentCreate(BaseModel):
     # Optional
     duration: Optional[str] = None
     cast: Optional[str] = None
+    naming_asset: Optional[str] = None
     storage_location: Optional[str] = None
     notes: Optional[str] = None
     qc_date: Optional[datetime] = None        # tanggal QC; default = hari ini
@@ -36,6 +37,7 @@ class QCContentUpdate(BaseModel):
     editor_name: Optional[str] = None
     duration: Optional[str] = None
     cast: Optional[str] = None
+    naming_asset: Optional[str] = None
     storage_location: Optional[str] = None
     notes: Optional[str] = None
 
@@ -73,6 +75,7 @@ class QCContentOut(BaseModel):
     ingest_by: Optional[str] = None          # CMS operator name
     ingest_at: Optional[datetime] = None
     revised_notes: Optional[str] = None
+    naming_asset: Optional[str] = None
     qc_date: datetime
     created_at: datetime
     updated_at: datetime

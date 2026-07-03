@@ -130,6 +130,13 @@ def create_qc(
     db.refresh(content)
     row = _enrich(content, db)
     background_tasks.add_task(sync_row, row)
+
+    # Notify CMS to fill in naming asset
+    _notify_cms(db, content, background_tasks,
+                "Konten Baru — Perlu Naming Asset",
+                f"{content.title} (Eps {content.episode}) ditambahkan. Mohon isi Naming Asset.",
+                f"/qc/{content.id}")
+
     return {**row}
 
 
@@ -263,8 +270,15 @@ def transition_status(
 
     # Notify CMS when ready to ingest (editor submitted) or re-submitted after Need Revised
     if payload.new_status == StatusEnum.READY_TO_INGEST:
-        _notify_cms(db, content, background_tasks,
-                    "Konten Siap Diingest", notif_body, notif_url)
+        # Check if naming_asset is empty — warn CMS if so
+        if not content.naming_asset:
+            _notify_cms(db, content, background_tasks,
+                        "⚠️ Naming Asset Belum Diisi!",
+                        f"{content.title} (Eps {content.episode}) siap upload tapi Naming Asset belum diisi. Segera isi sebelum ingest.",
+                        f"/qc/{content.id}")
+        else:
+            _notify_cms(db, content, background_tasks,
+                        "Konten Siap Diingest", notif_body, notif_url)
 
     return row
 
@@ -337,3 +351,29 @@ def get_history(content_id: int, db: Session = Depends(get_db), _: User = Depend
          "new_value": h.new_value, "changed_at": h.changed_at, "changed_by_name": h.changed_by_name}
         for h in content.histories
     ]
+
+# ─── Naming Asset endpoint ───────────────────────────────────────────────────
+
+class NamingAssetPayload(BaseModel):
+    naming_asset: str
+
+@router.patch("/{content_id}/naming-asset", response_model=QCContentOut)
+def set_naming_asset(
+    content_id: int,
+    payload: NamingAssetPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """CMS or Editor can set/update the naming asset for a content."""
+    if current_user.role not in ("cms", "editor", "admin"):
+        raise HTTPException(403, "Akses ditolak")
+    content = db.query(QCContent).filter(QCContent.id == content_id).first()
+    if not content:
+        raise HTTPException(404, "Content not found")
+    old = content.naming_asset
+    content.naming_asset = payload.naming_asset.strip()
+    _log_change(db, content.id, "naming_asset", old, payload.naming_asset,
+                user_id=current_user.id, by_name=current_user.name)
+    db.commit()
+    db.refresh(content)
+    return {**_enrich(content, db)}
