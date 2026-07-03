@@ -14,7 +14,9 @@ def run_enum_types():
     """Create custom PostgreSQL enum types before tables are created."""
     enum_stmts = [
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverymethod') THEN CREATE TYPE deliverymethod AS ENUM ('HDD', 'GDrive', 'Aspera', 'Filezilla'); END IF; END $$",
-        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverystatus') THEN CREATE TYPE deliverystatus AS ENUM ('Pending', 'Confirmed'); END IF; END $$",
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverystatus') THEN CREATE TYPE deliverystatus AS ENUM ('Pending', 'Copying', 'Ready to QC', 'Confirmed'); END IF; END $$",
+        "ALTER TYPE deliverystatus ADD VALUE IF NOT EXISTS 'Copying'",
+        "ALTER TYPE deliverystatus ADD VALUE IF NOT EXISTS 'Ready to QC'",
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'requeststatus') THEN CREATE TYPE requeststatus AS ENUM ('Pending', 'Approved', 'Rejected'); END IF; END $$",
     ]
     for stmt in enum_stmts:

@@ -19,7 +19,7 @@ router = APIRouter(prefix="/delivery", tags=["delivery"])
 
 class DeliverySubmit(BaseModel):
     sender_name:     str
-    source_category: str        # PH / MNC Group / Others
+    source_category: str
     source_name:     str
     delivery_method: str
     link_video:      Optional[str] = None
@@ -27,37 +27,9 @@ class DeliverySubmit(BaseModel):
     link_poster:     Optional[str] = None
     link_metadata:   Optional[str] = None
     link_other:      Optional[str] = None
-    content_titles:  List[str]   # array of title strings
-    delivery_date:   str         # ISO date string YYYY-MM-DD
-    notes:           Optional[str] = None
-
-
-class DeliveryOut(BaseModel):
-    id:              int
-    token:           str
-    sender_name:     str
-    source_category: str
-    source_name:     str
-    delivery_method: str
-    link_video:      Optional[str]
-    link_trailer:    Optional[str]
-    link_poster:     Optional[str]
-    link_metadata:   Optional[str]
-    link_other:      Optional[str]
     content_titles:  List[str]
     delivery_date:   str
-    notes:           Optional[str]
-    status:          str
-    confirmed_by:    Optional[str]
-    confirmed_at:    Optional[str]
-    created_at:      str
-
-    class Config:
-        from_attributes = True
-
-
-class ConfirmRequest(BaseModel):
-    pass
+    notes:           Optional[str] = None
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -115,6 +87,7 @@ def submit_delivery(payload: DeliverySubmit, db: Session = Depends(get_db)):
 
 @router.get("/receipt/{token}")
 def get_receipt(token: str, db: Session = Depends(get_db)):
+    """Public — full delivery detail for receipt/tracking page."""
     d = db.query(Delivery).filter(Delivery.token == token).first()
     if not d:
         raise HTTPException(404, "Receipt tidak ditemukan")
@@ -134,20 +107,61 @@ def list_deliveries(
     return [_to_out(d) for d in deliveries]
 
 
+@router.patch("/{delivery_id}/start-copy")
+def start_copy(
+    delivery_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """MH mulai proses copy materi — Pending → Copying."""
+    if current_user.role not in ("material_handling", "admin"):
+        raise HTTPException(403, "Akses ditolak")
+    d = db.query(Delivery).filter(Delivery.id == delivery_id).first()
+    if not d:
+        raise HTTPException(404, "Delivery tidak ditemukan")
+    if d.status not in (DeliveryStatus.PENDING, DeliveryStatus.CONFIRMED):
+        raise HTTPException(400, f"Status saat ini: {d.status.value}. Harus Pending untuk mulai copy.")
+    d.status       = DeliveryStatus.COPYING
+    d.confirmed_by = current_user.name
+    d.confirmed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(d)
+    return _to_out(d)
+
+
+@router.patch("/{delivery_id}/complete-copy")
+def complete_copy(
+    delivery_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """MH selesai copy materi — Copying → Ready to QC."""
+    if current_user.role not in ("material_handling", "admin"):
+        raise HTTPException(403, "Akses ditolak")
+    d = db.query(Delivery).filter(Delivery.id == delivery_id).first()
+    if not d:
+        raise HTTPException(404, "Delivery tidak ditemukan")
+    if d.status != DeliveryStatus.COPYING:
+        raise HTTPException(400, f"Status saat ini: {d.status.value}. Harus Copying untuk complete.")
+    d.status = DeliveryStatus.READY_TO_QC
+    db.commit()
+    db.refresh(d)
+    return _to_out(d)
+
+
 @router.patch("/{delivery_id}/confirm")
 def confirm_delivery(
     delivery_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Legacy confirm endpoint."""
     if current_user.role not in ("material_handling", "admin"):
         raise HTTPException(403, "Akses ditolak")
     d = db.query(Delivery).filter(Delivery.id == delivery_id).first()
     if not d:
         raise HTTPException(404, "Delivery tidak ditemukan")
-    if d.status == DeliveryStatus.CONFIRMED:
-        raise HTTPException(400, "Sudah dikonfirmasi")
-    d.status       = DeliveryStatus.CONFIRMED
+    d.status       = DeliveryStatus.COPYING
     d.confirmed_by = current_user.name
     d.confirmed_at = datetime.now(timezone.utc)
     db.commit()
