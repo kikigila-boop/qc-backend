@@ -72,7 +72,7 @@ def _notify_mh(db: Session, title: str, message: str, url: str = "/material"):
         User.role == "material_handling", User.is_active == True
     ).all()
     for u in mh_users:
-        db.add(UserNotification(user_id=u.id, title=title, message=message, url=url))
+        db.add(UserNotification(user_id=u.id, title=title, body=message, url=url))
     db.commit()
 
 
