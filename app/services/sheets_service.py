@@ -204,3 +204,166 @@ def sync_row(row_data: dict) -> None:
 
     except Exception as exc:
         logger.error("Google Sheets sync_row error: %s", exc)
+
+
+# ─── Library Sync ─────────────────────────────────────────────────────────────
+def _parse_duration_minutes(s: str) -> float:
+    try:
+        parts = str(s or "").strip().split(":")
+        if len(parts) == 3:
+            return int(parts[0]) * 60 + int(parts[1]) + int(parts[2]) / 60
+        elif len(parts) == 2:
+            return int(parts[0]) + int(parts[1]) / 60
+    except Exception:
+        pass
+    return 0
+
+
+def _fmt_minutes(total: float) -> str:
+    h = int(total // 60)
+    m = int(total % 60)
+    return f"{h} jam {m} menit"
+
+
+def _ensure_library_tab(service, spreadsheet_id: str, tab_name: str) -> int:
+    """Create or clear the monthly library tab. Returns sheetId."""
+    meta = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+    existing = {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta.get("sheets", [])}
+    if tab_name in existing:
+        # Clear existing content
+        service.spreadsheets().values().clear(
+            spreadsheetId=spreadsheet_id,
+            range=f"'{tab_name}'",
+            body={},
+        ).execute()
+        return existing[tab_name]
+    else:
+        res = service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"requests": [{"addSheet": {"properties": {"title": tab_name}}}]},
+        ).execute()
+        return res["replies"][0]["addSheet"]["properties"]["sheetId"]
+
+
+def sync_library_to_sheet(db) -> int:
+    """
+    Pull all QC + Delivery + Request data, write to monthly Library tab.
+    Returns number of data rows written.
+    """
+    if not settings.GOOGLE_SPREADSHEET_ID:
+        raise RuntimeError("GOOGLE_SPREADSHEET_ID not configured")
+
+    service = _get_service()
+    if service is None:
+        raise RuntimeError("Google Sheets credentials not configured")
+
+    from ..models.qc_content import QCContent, QCHistory
+    from ..models.delivery import Delivery
+    from ..models.content_request import ContentRequest
+    import json
+    from datetime import datetime
+
+    tab_name = "Library_" + datetime.now().strftime("%b_%Y")
+    _ensure_library_tab(service, settings.GOOGLE_SPREADSHEET_ID, tab_name)
+
+    HEADERS = [
+        "Tanggal Input", "Tipe Data", "QCID", "Judul", "Tipe Konten",
+        "Season", "Episode", "Durasi", "Durasi (Menit)",
+        "Status", "QC Result", "Editor / PIC", "MH", "CMS Operator",
+        "Naming Asset", "Sumber / Pengirim", "Metode",
+        "Tanggal Update", "Keterangan",
+    ]
+
+    rows = [HEADERS]
+    total_minutes = 0.0
+
+    def _parse_titles(raw):
+        try:
+            t = json.loads(raw)
+            if isinstance(t, list):
+                return ", ".join(str(x) for x in t)
+        except Exception:
+            pass
+        return raw or "-"
+
+    def _fmt_dt(dt):
+        if not dt:
+            return ""
+        if hasattr(dt, "strftime"):
+            return dt.strftime("%d/%m/%Y %H:%M")
+        return str(dt)
+
+    # — QC Content rows —
+    items = db.query(QCContent).order_by(QCContent.created_at.asc()).all()
+    for item in items:
+        dur_min = _parse_duration_minutes(item.duration or "")
+        total_minutes += dur_min
+        qc_result = item.qc_result.value if hasattr(item.qc_result, "value") else str(item.qc_result or "")
+        rows.append([
+            _fmt_dt(item.created_at), "QC",
+            item.qcid or "", item.title or "",
+            item.content_type or "", item.season or "", item.episode or "",
+            item.duration or "", round(dur_min, 2),
+            str(item.status or ""), qc_result,
+            item.editor_name or "", item.mh_name or "", item.ingest_by or "",
+            item.naming_asset or "", "", "",
+            _fmt_dt(item.updated_at), item.notes or "",
+        ])
+
+    # — Delivery rows —
+    deliveries = db.query(Delivery).order_by(Delivery.created_at.asc()).all()
+    for d in deliveries:
+        rows.append([
+            _fmt_dt(d.created_at), "Kiriman",
+            "", _parse_titles(d.content_titles),
+            "", "", "", "", "",
+            d.status or "", "", "", "", "",
+            "", d.sender_name or "", d.delivery_method or "",
+            _fmt_dt(d.confirmed_at), d.notes or "",
+        ])
+
+    # — Request rows —
+    requests = db.query(ContentRequest).order_by(ContentRequest.created_at.asc()).all()
+    for r in requests:
+        rows.append([
+            _fmt_dt(r.created_at), "Request",
+            "", _parse_titles(r.content_titles),
+            "", "", "", "", "",
+            r.status or "", "", "", "", "",
+            "", r.requestor_name or "", r.source_requestor or "",
+            _fmt_dt(r.received_at or r.sent_at), r.requestor_need or "",
+        ])
+
+    # — Summary row —
+    rows.append([])
+    rows.append(["TOTAL DURASI QC", "", "", "", "", "", "", "", _fmt_minutes(total_minutes)] + [""] * 10)
+
+    data_rows = len(rows) - 3  # minus header, blank, summary
+
+    # Write all at once
+    service.spreadsheets().values().update(
+        spreadsheetId=settings.GOOGLE_SPREADSHEET_ID,
+        range=f"'{tab_name}'!A1",
+        valueInputOption="USER_ENTERED",
+        body={"values": rows},
+    ).execute()
+
+    # Bold header row
+    sheet_id = _ensure_library_tab(service, settings.GOOGLE_SPREADSHEET_ID, tab_name)
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=settings.GOOGLE_SPREADSHEET_ID,
+        body={"requests": [
+            {"repeatCell": {
+                "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1},
+                "cell": {"userEnteredFormat": {"textFormat": {"bold": True}, "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.6}}},
+                "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.backgroundColor",
+            }},
+            {"updateSheetProperties": {
+                "properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1}},
+                "fields": "gridProperties.frozenRowCount",
+            }},
+        ]},
+    ).execute()
+
+    logger.info("Library synced: %d rows to tab %s", data_rows, tab_name)
+    return data_rows
