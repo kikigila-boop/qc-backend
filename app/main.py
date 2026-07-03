@@ -64,8 +64,8 @@ def run_migrations():
         "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'MATERIAL_AVAIL'",
         "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'MATERIAL_REVISED'",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS mh_name VARCHAR(100)",
-        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS naming_asset TEXT
-        ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS content_type VARCHAR(50)",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS naming_asset TEXT",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS content_type VARCHAR(50)",
         "ALTER TABLE qc_content ALTER COLUMN editor_name DROP NOT NULL",
         # Enum types are created in run_enum_types() before create_all()
         # Convert enum columns to VARCHAR if they are still PostgreSQL enum types
