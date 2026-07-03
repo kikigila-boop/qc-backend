@@ -156,7 +156,8 @@ def move_to_logbook(
     item = db.query(QCContent).filter(QCContent.id == content_id).first()
     if not item:
         raise HTTPException(404, "Konten tidak ditemukan")
-    if str(item.status) != "Done Ingest":
+    status_val = item.status.value if hasattr(item.status, "value") else str(item.status)
+    if status_val != "Done Ingest":
         raise HTTPException(400, "Hanya item Done Ingest yang bisa dipindah ke Log QC")
     item.in_logbook = True
     db.add(QCHistory(
@@ -180,9 +181,10 @@ def sync_all_to_logbook(
     if current_user.role not in ("admin", "material_handling"):
         raise HTTPException(403, "Akses ditolak")
     items = db.query(QCContent).filter(
-        QCContent.status == "Done Ingest",
         QCContent.in_logbook == False,
     ).all()
+    # Filter to only Done Ingest
+    items = [i for i in items if (i.status.value if hasattr(i.status, "value") else str(i.status)) == "Done Ingest"]
     for item in items:
         item.in_logbook = True
         db.add(QCHistory(
