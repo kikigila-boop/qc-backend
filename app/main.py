@@ -97,6 +97,8 @@ def run_migrations():
         "ALTER TABLE content_requests ADD COLUMN IF NOT EXISTS sent_by VARCHAR(100)",
         "ALTER TABLE content_requests ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE content_requests ADD COLUMN IF NOT EXISTS received_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS with_dubb BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE subtitle_tasks ADD COLUMN IF NOT EXISTS task_type VARCHAR(10) NOT NULL DEFAULT 'subs'",
     ]
     # Each statement runs in its own connection/transaction.
     # This prevents a single failure from aborting subsequent migrations.

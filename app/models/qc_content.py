@@ -80,6 +80,7 @@ class QCContent(Base):
 
     platform   = Column(String(100), nullable=True)   # JSON array e.g. '["vshort","vplus"]'
     with_subs  = Column(Boolean, nullable=False, default=False)
+    with_dubb  = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -126,6 +127,7 @@ class SubtitleTask(Base):
     language_code  = Column(String(5), nullable=False)   # ID, EN, AR, …
     language_name  = Column(String(50), nullable=False)  # Indonesia, English, …
     status         = Column(SAEnum(SubtitleStatus), nullable=False, default=SubtitleStatus.PENDING)
+    task_type      = Column(String(10), nullable=False, default="subs")  # "subs" | "dubb"
     pic            = Column(String(100), nullable=True)
     updated_at     = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     updated_by_id  = Column(Integer, ForeignKey("users.id"), nullable=True)

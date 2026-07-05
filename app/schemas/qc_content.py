@@ -19,7 +19,10 @@ class QCContentCreate(BaseModel):
     content_type: Optional[str] = None
     platform: Optional[str] = None      # JSON: '["vshort"]' or '["vshort","vplus"]'
     with_subs: bool = False
-    selected_languages: Optional[List[str]] = None  # e.g. ["ID","EN","AR"]
+    with_dubb: bool = False
+    selected_languages: Optional[List[str]] = None
+    with_dubb: bool = False
+    selected_dubb_languages: Optional[List[str]] = None
     storage_location: Optional[str] = None
     notes: Optional[str] = None
     qc_date: Optional[datetime] = None        # tanggal QC; default = hari ini
@@ -84,6 +87,7 @@ class QCContentOut(BaseModel):
     in_logbook: bool = False
     platform: Optional[str] = None
     with_subs: bool = False
+    with_dubb: bool = False
     qc_date: datetime
     created_at: datetime
     updated_at: datetime
@@ -170,6 +174,7 @@ class SubtitleTaskOut(BaseModel):
     language_code: str
     language_name: str
     status: str
+    task_type: str = "subs"
     pic: Optional[str] = None
     updated_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
