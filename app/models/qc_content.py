@@ -78,11 +78,15 @@ class QCContent(Base):
 
     revised_notes = Column(Text)
 
+    platform   = Column(String(100), nullable=True)   # JSON array e.g. '["vshort","vplus"]'
+    with_subs  = Column(Boolean, nullable=False, default=False)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     editor_user = relationship("User", back_populates="qc_contents", foreign_keys=[editor_id])
-    histories   = relationship("QCHistory", back_populates="qc_content", order_by="QCHistory.changed_at.desc()")
+    histories       = relationship("QCHistory", back_populates="qc_content", order_by="QCHistory.changed_at.desc()")
+    subtitle_tasks  = relationship("SubtitleTask", back_populates="qc_content", order_by="SubtitleTask.language_code")
 
     __table_args__ = (
         Index("ix_qc_content_title_season_ep", "title", "season", "episode"),
@@ -104,3 +108,27 @@ class QCHistory(Base):
 
     qc_content      = relationship("QCContent", back_populates="histories")
     changed_by_user = relationship("User", back_populates="histories", foreign_keys=[changed_by_id])
+
+
+# ── Subtitle Tasks ──────────────────────────────────────────────────────────
+
+class SubtitleStatus(str, enum.Enum):
+    PENDING     = "pending"
+    IN_PROGRESS = "in_progress"
+    DONE        = "done"
+
+
+class SubtitleTask(Base):
+    __tablename__ = "subtitle_tasks"
+
+    id             = Column(Integer, primary_key=True, index=True)
+    qc_content_id  = Column(Integer, ForeignKey("qc_content.id"), nullable=False, index=True)
+    language_code  = Column(String(5), nullable=False)   # ID, EN, AR, …
+    language_name  = Column(String(50), nullable=False)  # Indonesia, English, …
+    status         = Column(SAEnum(SubtitleStatus), nullable=False, default=SubtitleStatus.PENDING)
+    pic            = Column(String(100), nullable=True)
+    updated_at     = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_by_id  = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    qc_content     = relationship("QCContent", back_populates="subtitle_tasks")
+    updated_by     = relationship("User", foreign_keys=[updated_by_id])

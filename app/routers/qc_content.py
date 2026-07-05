@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel
+from ..models.qc_content import SubtitleTask, SubtitleStatus
+from ..routers.subs import generate_subtitle_tasks
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List, Optional
@@ -121,6 +123,7 @@ def create_qc(
         if not data.get('editor_id'):
             data['editor_id'] = current_user.id
 
+    selected_languages = data.pop('selected_languages', None)
     content = QCContent(**data)
     db.add(content)
     db.flush()
@@ -128,6 +131,9 @@ def create_qc(
     _log_change(db, content.id, "created", None, "record created",
                 user_id=current_user.id, by_name=current_user.name)
     db.commit()
+    db.refresh(content)
+    if content.with_subs:
+        generate_subtitle_tasks(db, content, selected_languages)
     db.refresh(content)
     row = _enrich(content, db)
     background_tasks.add_task(sync_row, row)

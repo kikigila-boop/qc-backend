@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from .database import Base, engine
-from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export, material, delivery, request, logbook
+from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export, material, delivery, request, logbook, subs
 from .models.push_subscription import PushSubscription  # noqa: F401 — ensures table is created
 from .models.notification import UserNotification  # noqa: F401 — ensures table is created
 from .models.delivery import Delivery  # noqa: F401 — ensures table is created
@@ -67,6 +67,19 @@ def run_migrations():
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS naming_asset TEXT",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS content_type VARCHAR(50)",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS in_logbook BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS platform VARCHAR(100)",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS with_subs BOOLEAN DEFAULT FALSE",
+        """CREATE TABLE IF NOT EXISTS subtitle_tasks (
+            id SERIAL PRIMARY KEY,
+            qc_content_id INTEGER NOT NULL REFERENCES qc_content(id) ON DELETE CASCADE,
+            language_code VARCHAR(5) NOT NULL,
+            language_name VARCHAR(50) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            pic VARCHAR(100),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_by_id INTEGER REFERENCES users(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_subtitle_tasks_qc_content_id ON subtitle_tasks(qc_content_id)",
         "ALTER TABLE qc_content ALTER COLUMN editor_name DROP NOT NULL",
         # Enum types are created in run_enum_types() before create_all()
         # Convert enum columns to VARCHAR if they are still PostgreSQL enum types
@@ -144,6 +157,7 @@ app.include_router(export.router, prefix=API_PREFIX)
 app.include_router(delivery.router, prefix=API_PREFIX)
 app.include_router(request.router, prefix=API_PREFIX)
 app.include_router(logbook.router, prefix=API_PREFIX)
+    app.include_router(subs.router, prefix=API_PREFIX)
 
 
 @app.get("/", tags=["Health"])

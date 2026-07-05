@@ -17,7 +17,9 @@ class QCContentCreate(BaseModel):
     cast: Optional[str] = None
     naming_asset: Optional[str] = None
     content_type: Optional[str] = None
-    content_type: Optional[str] = None
+    platform: Optional[str] = None      # JSON: '["vshort"]' or '["vshort","vplus"]'
+    with_subs: bool = False
+    selected_languages: Optional[List[str]] = None  # e.g. ["ID","EN","AR"]
     storage_location: Optional[str] = None
     notes: Optional[str] = None
     qc_date: Optional[datetime] = None        # tanggal QC; default = hari ini
@@ -80,6 +82,8 @@ class QCContentOut(BaseModel):
     naming_asset: Optional[str] = None
     content_type: Optional[str] = None
     in_logbook: bool = False
+    platform: Optional[str] = None
+    with_subs: bool = False
     qc_date: datetime
     created_at: datetime
     updated_at: datetime
@@ -156,3 +160,36 @@ class DashboardStats(BaseModel):
     weekly_progress: List[WeeklyProgress]
     monthly_progress: List[MonthlyProgress]
     by_status: List[StatusCount]
+
+
+# ── Subtitle Schemas ─────────────────────────────────────────────────────────
+
+class SubtitleTaskOut(BaseModel):
+    id: int
+    qc_content_id: int
+    language_code: str
+    language_name: str
+    status: str
+    pic: Optional[str] = None
+    updated_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class SubtitleTaskUpdate(BaseModel):
+    status: Optional[str] = None   # pending | in_progress | done
+    pic: Optional[str] = None
+
+
+class SubsContentOut(BaseModel):
+    """QC content with subtitle task progress for /subs page."""
+    id: int
+    qcid: Optional[str]
+    title: str
+    season: str
+    episode: str
+    content_type: Optional[str]
+    platform: Optional[str]
+    with_subs: bool
+    status: StatusEnum
+    subtitle_tasks: List[SubtitleTaskOut] = []
+    model_config = {"from_attributes": True}
