@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel
 from ..models.qc_content import SubtitleTask, SubtitleStatus
-from ..routers.subs import generate_subtitle_tasks
+from ..services.subtitle_service import generate_subtitle_tasks
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List, Optional

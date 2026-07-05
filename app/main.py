@@ -157,7 +157,7 @@ app.include_router(export.router, prefix=API_PREFIX)
 app.include_router(delivery.router, prefix=API_PREFIX)
 app.include_router(request.router, prefix=API_PREFIX)
 app.include_router(logbook.router, prefix=API_PREFIX)
-    app.include_router(subs.router, prefix=API_PREFIX)
+app.include_router(subs.router, prefix=API_PREFIX)
 
 
 @app.get("/", tags=["Health"])
