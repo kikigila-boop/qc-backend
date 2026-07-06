@@ -99,11 +99,38 @@ def run_migrations():
             print(f"[migration] skipped: {stmt[:60]}… → {e}")
 
 
+
+
+def seed_admin():
+    from .database import SessionLocal
+    from .models.user import User
+    from .utils.security import hash_password
+    db = SessionLocal()
+    try:
+        if db.query(User).count() == 0:
+            admin = User(
+                name="Admin",
+                email="content@vplushort.com",
+                hashed_password=hash_password("Admin2503!"),
+                role="admin",
+                is_active=True,
+            )
+            db.add(admin)
+            db.commit()
+            print("[seed] Admin user created: content@vplushort.com")
+        else:
+            print("[seed] Users already exist, skipping seed")
+    except Exception as e:
+        print(f"[seed] Error: {e}")
+    finally:
+        db.close()
+
 # ─── Startup: enums → tables → patches ──────────────────────────────────────────
 try:
     run_enum_types()
     Base.metadata.create_all(bind=engine)
     run_migrations()
+    seed_admin()
 except Exception as _startup_err:
     import traceback
     print(f"[startup] WARNING: DB init error: {_startup_err}")
@@ -148,6 +175,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://qc-frontend-xi.vercel.app",
+        "https://contentops-flow.vercel.app",
         "http://localhost:3000",
         "http://localhost:3001",
     ],
