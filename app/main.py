@@ -2,17 +2,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from .database import Base, engine
-from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export, material, delivery, request, logbook, subs
-from .models.push_subscription import PushSubscription  # noqa: F401 — ensures table is created
-from .models.notification import UserNotification  # noqa: F401 — ensures table is created
-from .models.delivery import Delivery  # noqa: F401 — ensures table is created
-from .models.content_request import ContentRequest  # noqa: F401 — ensures table is created
+from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export, material, delivery, request, logbook, subs, on_air
+from .models.push_subscription import PushSubscription  # noqa: F401
+from .models.notification import UserNotification  # noqa: F401
+from .models.delivery import Delivery  # noqa: F401
+from .models.content_request import ContentRequest  # noqa: F401
+from .models.on_air import OnAirEntry  # noqa: F401
 from .config import settings
 
 
 def run_enum_types():
-    """Create custom PostgreSQL enum types before tables are created."""
-    # DO $$ ... $$ blocks — safe in normal transaction
     do_stmts = [
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverymethod') THEN CREATE TYPE deliverymethod AS ENUM ('HDD', 'GDrive', 'Aspera', 'Filezilla'); END IF; END $$",
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'deliverystatus') THEN CREATE TYPE deliverystatus AS ENUM ('Pending', 'Copying', 'Ready to QC', 'Confirmed'); END IF; END $$",
@@ -26,7 +25,6 @@ def run_enum_types():
         except Exception as e:
             print(f"[enum migration] skipped: {e}")
 
-    # ALTER TYPE ADD VALUE requires AUTOCOMMIT — cannot run inside a transaction
     alter_stmts = [
         "ALTER TYPE deliverystatus ADD VALUE IF NOT EXISTS 'Copying'",
         "ALTER TYPE deliverystatus ADD VALUE IF NOT EXISTS 'Ready to QC'",
@@ -40,25 +38,16 @@ def run_enum_types():
 
 
 def run_migrations():
-    """
-    Safely add any columns that may have been introduced after the initial
-    Railway deployment.  Uses IF NOT EXISTS so it is idempotent.
-    """
     migrations = [
-        # qc_content table
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS qcid VARCHAR(20) UNIQUE",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS editor_name VARCHAR(100)",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS editor_id INTEGER REFERENCES users(id)",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS ingest_by VARCHAR(100)",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS ingest_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS revised_notes TEXT",
-        # qc_history table
         "ALTER TABLE qc_history ADD COLUMN IF NOT EXISTS changed_by_name VARCHAR(100)",
-        # users table
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE",
-        # user_notifications table — created via create_all but guard just in case
         "ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS url VARCHAR(500)",
-        # New status enum values (PostgreSQL ALTER TYPE, idempotent via IF NOT EXISTS)
         "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'INGESTING'",
         "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'NEED_REVISED'",
         "ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'MATERIAL_AVAIL'",
@@ -81,12 +70,9 @@ def run_migrations():
         )""",
         "CREATE INDEX IF NOT EXISTS ix_subtitle_tasks_qc_content_id ON subtitle_tasks(qc_content_id)",
         "ALTER TABLE qc_content ALTER COLUMN editor_name DROP NOT NULL",
-        # Enum types are created in run_enum_types() before create_all()
-        # Convert enum columns to VARCHAR if they are still PostgreSQL enum types
         "ALTER TABLE deliveries ALTER COLUMN status TYPE VARCHAR(50) USING status::text",
         "ALTER TABLE deliveries ALTER COLUMN delivery_method TYPE VARCHAR(50) USING delivery_method::text",
         "ALTER TABLE content_requests ALTER COLUMN status TYPE VARCHAR(50) USING status::text",
-        # Normalize status to canonical case (fix PENDING → Pending, etc.)
         "UPDATE deliveries SET status = 'Pending' WHERE LOWER(status) = 'pending'",
         "UPDATE deliveries SET status = 'Copying' WHERE LOWER(status) = 'copying'",
         "UPDATE deliveries SET status = 'Ready to QC' WHERE LOWER(status) IN ('ready to qc', 'ready_to_qc', 'readytoqc')",
@@ -100,8 +86,6 @@ def run_migrations():
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS with_dubb BOOLEAN DEFAULT FALSE",
         "ALTER TABLE subtitle_tasks ADD COLUMN IF NOT EXISTS task_type VARCHAR(10) NOT NULL DEFAULT 'subs'",
     ]
-    # Each statement runs in its own connection/transaction.
-    # This prevents a single failure from aborting subsequent migrations.
     for stmt in migrations:
         try:
             with engine.connect() as conn:
@@ -111,16 +95,42 @@ def run_migrations():
             print(f"[migration] skipped: {stmt[:60]}… → {e}")
 
 
-# Startup sequence: enums first → tables → column patches
+# ─── Startup: enums → tables → patches ──────────────────────────────────────────
 try:
     run_enum_types()
     Base.metadata.create_all(bind=engine)
     run_migrations()
 except Exception as _startup_err:
     import traceback
-    print(f"[startup] WARNING: DB init error (app will still start): {_startup_err}")
+    print(f"[startup] WARNING: DB init error: {_startup_err}")
     traceback.print_exc()
 
+# ─── Scheduled sync ─────────────────────────────────────────────────────────────
+try:
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    from .database import SessionLocal
+    from .services.on_air_service import sync_all
+
+    def _scheduled_on_air_sync():
+        db = SessionLocal()
+        try:
+            results = sync_all(db)
+            print(f"[scheduler] On Air sync done: {results}")
+        except Exception as exc:
+            print(f"[scheduler] On Air sync error: {exc}")
+        finally:
+            db.close()
+
+    _scheduler = BackgroundScheduler(timezone="Asia/Jakarta")
+    # Every day at 07:00 WIB
+    _scheduler.add_job(_scheduled_on_air_sync, CronTrigger(hour=7, minute=0))
+    _scheduler.start()
+    print("[scheduler] On Air daily sync scheduled at 07:00 WIB")
+except Exception as _sched_err:
+    print(f"[scheduler] Could not start scheduler: {_sched_err}")
+
+# ─── App ─────────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title=settings.APP_NAME,
     description="REST API for OTT Quality Control Management System",
@@ -130,7 +140,6 @@ app = FastAPI(
     redirect_slashes=False,
 )
 
-# CORS — explicit origins required when allow_credentials=True
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -138,7 +147,6 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:3001",
     ],
-    # Cover all Vercel preview deploy URLs (*.vercel.app)
     allow_origin_regex=r"https://qc-frontend-.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
@@ -160,6 +168,7 @@ app.include_router(delivery.router, prefix=API_PREFIX)
 app.include_router(request.router, prefix=API_PREFIX)
 app.include_router(logbook.router, prefix=API_PREFIX)
 app.include_router(subs.router, prefix=API_PREFIX)
+app.include_router(on_air.router, prefix=API_PREFIX)
 
 
 @app.get("/", tags=["Health"])
