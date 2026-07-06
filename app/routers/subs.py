@@ -29,7 +29,7 @@ def list_dubb_content(db: Session = Depends(get_db), current_user: User = Depend
 @router.get("/{content_id}/tasks", response_model=List[SubtitleTaskOut])
 def get_tasks(
     content_id: int,
-    task_type: str = Query("subs", regex="^(subs|dubb)$"),
+    task_type: str = Query("subs", pattern="^(subs|dubb)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -69,7 +69,7 @@ def update_task(
 @router.post("/{content_id}/regenerate")
 def regenerate_tasks(
     content_id: int,
-    task_type: str = Query("subs", regex="^(subs|dubb)$"),
+    task_type: str = Query("subs", pattern="^(subs|dubb)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

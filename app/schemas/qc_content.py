@@ -21,7 +21,6 @@ class QCContentCreate(BaseModel):
     with_subs: bool = False
     with_dubb: bool = False
     selected_languages: Optional[List[str]] = None
-    with_dubb: bool = False
     selected_dubb_languages: Optional[List[str]] = None
     storage_location: Optional[str] = None
     notes: Optional[str] = None
@@ -47,6 +46,9 @@ class QCContentUpdate(BaseModel):
     naming_asset: Optional[str] = None
     storage_location: Optional[str] = None
     notes: Optional[str] = None
+    platform: Optional[str] = None
+    with_subs: Optional[bool] = None
+    with_dubb: Optional[bool] = None
 
 
 class StatusTransition(BaseModel):
