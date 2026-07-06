@@ -10,6 +10,42 @@ from ..services.on_air_service import sync_all, sync_platform
 from .auth import get_current_user
 from ..models.user import User
 
+
+from zoneinfo import ZoneInfo
+import locale
+
+_WIB = ZoneInfo("Asia/Jakarta")
+_MONTH_MAP = {
+    "jan":1,"feb":2,"mar":3,"apr":4,"may":5,"mei":5,"jun":6,
+    "jul":7,"aug":8,"agu":8,"sep":9,"oct":10,"okt":10,"nov":11,"dec":12,"des":12,
+}
+
+def _parse_date(date_str: str):
+    """Parse date strings like '1 Apr 2026' → date object. Returns None if unparseable."""
+    if not date_str:
+        return None
+    parts = date_str.strip().split()
+    if len(parts) == 3:
+        try:
+            day = int(parts[0])
+            mon = _MONTH_MAP.get(parts[1].lower())
+            year = int(parts[2])
+            if mon:
+                from datetime import date
+                return date(year, mon, day)
+        except Exception:
+            pass
+    return None
+
+def _is_upcoming(date_str: str) -> bool:
+    """Return True if date is today or future (WIB), or unparseable (keep by default)."""
+    from datetime import date
+    parsed = _parse_date(date_str)
+    if parsed is None:
+        return True  # can't parse → keep
+    today = datetime.now(_WIB).date()
+    return parsed >= today
+
 router = APIRouter(prefix="/on-air", tags=["On Air"])
 
 
@@ -42,6 +78,8 @@ def get_vplus(db: Session = Depends(get_db), _: User = Depends(get_current_user)
         .order_by(OnAirEntry.row_index)
         .all()
     )
+    # Filter out past release dates
+    entries = [e for e in entries if _is_upcoming(e.row_data.get("Release Schedule", ""))]
     return _format_entries_with_meta(entries)
 
 
@@ -53,6 +91,8 @@ def get_vshort(db: Session = Depends(get_db), _: User = Depends(get_current_user
         .order_by(OnAirEntry.row_index)
         .all()
     )
+    # Filter out past release dates
+    entries = [e for e in entries if _is_upcoming(e.row_data.get("Release Date", ""))]
     return _format_entries_with_meta(entries)
 
 
