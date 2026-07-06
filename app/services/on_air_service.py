@@ -45,7 +45,7 @@ def _get_service():
             token_uri="https://oauth2.googleapis.com/token",
             client_id=settings.GOOGLE_CLIENT_ID,
             client_secret=settings.GOOGLE_CLIENT_SECRET,
-            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+            scopes=["https://www.googleapis.com/auth/spreadsheets"],
         )
         creds.refresh(Request())
         return build("sheets", "v4", credentials=creds, cache_discovery=False)
