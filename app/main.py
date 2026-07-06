@@ -206,3 +206,9 @@ app.include_router(on_air.router, prefix=API_PREFIX)
 @app.get("/", tags=["Health"])
 def health_check():
     return {"status": "ok", "app": settings.APP_NAME}
+
+
+@app.get("/api/v1/health", tags=["Health"])
+@app.head("/api/v1/health", tags=["Health"], include_in_schema=False)
+def api_health_check():
+    return {"status": "ok"}
