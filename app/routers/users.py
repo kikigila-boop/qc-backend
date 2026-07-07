@@ -39,6 +39,24 @@ def list_editors(
     )
 
 
+# ── All-active — for PIC assignment dropdowns (admin + supervisor) ────────────
+
+@router.get("/active", response_model=List[UserOut])
+def list_active_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all active users regardless of role — for PIC/assignment dropdowns."""
+    if current_user.role not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="Admin/supervisor only")
+    return (
+        db.query(User)
+        .filter(User.is_active == True)
+        .order_by(User.name)
+        .all()
+    )
+
+
 # ── Admin only ──────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[UserOut])
