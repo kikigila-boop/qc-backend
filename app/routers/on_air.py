@@ -243,7 +243,8 @@ def add_job(
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    if not entry.pic_user_id:
+    # Admin bisa langsung add-job tanpa PIC
+    if not entry.pic_user_id and current_user.role != "admin":
         raise HTTPException(status_code=400, detail="PIC belum diassign")
 
     entry.job_status = "added"
