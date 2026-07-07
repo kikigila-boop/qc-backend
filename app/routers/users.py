@@ -30,10 +30,10 @@ def list_editors(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """Return all active users with role editor or admin — used to populate dropdowns."""
+    """Return all active users — used to populate assignment dropdowns."""
     return (
         db.query(User)
-        .filter(User.role.in_(["editor", "chef_editor", "designer", "admin"]), User.is_active == True)
+        .filter(User.is_active == True)
         .order_by(User.name)
         .all()
     )
