@@ -112,9 +112,12 @@ def sync_platform(db: Session, platform: str) -> dict:
     Sync one platform's schedule from Google Sheets into DB.
     Returns {"platform": ..., "synced": N, "error": None | str}
     """
-    service = _get_service()
+    try:
+        service = _get_service()
+    except Exception as exc:
+        return {"platform": platform, "synced": 0, "error": f"Sheets init error: {exc}"}
     if service is None:
-        return {"platform": platform, "synced": 0, "error": "Google Sheets not configured"}
+        return {"platform": platform, "synced": 0, "error": "Google Sheets not configured — cek env vars GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN"}
 
     if platform == "vshort":
         rows = _read_sheet(service, VSHORT_SPREADSHEET_ID, VSHORT_TAB, VSHORT_COLUMNS)
