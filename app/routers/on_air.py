@@ -37,6 +37,24 @@ def _parse_date(date_str: str):
             pass
     return None
 
+def _parse_date_flexible(date_str: str):
+    """Parse multiple date formats: DD/MM/YYYY, D/M/YYYY, and existing text format."""
+    if not date_str:
+        return None
+    s = date_str.strip()
+    # Try DD/MM/YYYY or D/M/YYYY
+    parts = s.replace("-", "/").split("/")
+    if len(parts) == 3:
+        try:
+            from datetime import date as dateobj
+            day, mon, year = int(parts[0]), int(parts[1]), int(parts[2])
+            return dateobj(year, mon, day)
+        except Exception:
+            pass
+    # Fallback to text format (e.g. "1 Jul 2026")
+    return _parse_date(s)
+
+
 def _is_upcoming(date_str: str) -> bool:
     from datetime import date
     parsed = _parse_date(date_str)
@@ -90,6 +108,26 @@ def get_vshort(db: Session = Depends(get_db), _: User = Depends(get_current_user
         .all()
     )
     entries = [e for e in entries if _is_upcoming(e.row_data.get("Release Date", ""))]
+    return _format_entries_with_meta(entries)
+
+
+@router.get("/catchup")
+def get_catchup(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    entries = (
+        db.query(OnAirEntry)
+        .filter(OnAirEntry.platform == "catchup", OnAirEntry.is_aired == False)
+        .order_by(OnAirEntry.row_index)
+        .all()
+    )
+    # Filter to today + future using TX DATE, with flexible date parsing
+    def upcoming_catchup(e):
+        from datetime import date as dateobj
+        parsed = _parse_date_flexible(e.row_data.get("TX DATE", ""))
+        if parsed is None:
+            return True
+        today = datetime.now(_WIB).date()
+        return parsed >= today
+    entries = [e for e in entries if upcoming_catchup(e)]
     return _format_entries_with_meta(entries)
 
 

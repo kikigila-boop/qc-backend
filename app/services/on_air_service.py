@@ -28,6 +28,10 @@ VPLUS_COLUMNS = [
     "PH / Licensor", "License Start", "License End", "Cluster",
 ]
 
+CATCHUP_SPREADSHEET_ID = "18PTYONpD0HSrOFUlT5NyWQImpgiptdtFCYQBRLmH8jQ"
+CATCHUP_TAB = "LIVE AIRING TODAY SPORTS (AST)"
+CATCHUP_COLUMNS = ["TX DATE", "Channel", "EVENTS", "EXCLUSIVE?", "BANNER"]
+
 
 def _get_service():
     """Build Google Sheets API service using OAuth2 refresh token."""
@@ -116,6 +120,8 @@ def sync_platform(db: Session, platform: str) -> dict:
         rows = _read_sheet(service, VSHORT_SPREADSHEET_ID, VSHORT_TAB, VSHORT_COLUMNS)
     elif platform == "vplus":
         rows = _read_sheet(service, VPLUS_SPREADSHEET_ID, VPLUS_TAB, VPLUS_COLUMNS)
+    elif platform == "catchup":
+        rows = _read_sheet(service, CATCHUP_SPREADSHEET_ID, CATCHUP_TAB, CATCHUP_COLUMNS)
     else:
         return {"platform": platform, "synced": 0, "error": f"Unknown platform: {platform}"}
 
@@ -145,10 +151,11 @@ def sync_platform(db: Session, platform: str) -> dict:
 
 
 def sync_all(db: Session) -> list[dict]:
-    """Sync both V+ and Vshort."""
+    """Sync V+, Vshort, and Catchup Sports."""
     return [
         sync_platform(db, "vplus"),
         sync_platform(db, "vshort"),
+        sync_platform(db, "catchup"),
     ]
 
 
