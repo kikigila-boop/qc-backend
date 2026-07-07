@@ -89,6 +89,11 @@ def run_migrations():
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS is_aired BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS aired_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS aired_by VARCHAR(100)",
+        # on_air PIC & job columns
+        "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS pic_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL",
+        "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS pic_name VARCHAR(150)",
+        "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS pic_assigned_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS job_status VARCHAR(20)",
     ]
     for stmt in migrations:
         try:
