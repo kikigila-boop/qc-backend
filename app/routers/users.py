@@ -33,7 +33,7 @@ def list_editors(
     """Return all active users with role editor or admin — used to populate dropdowns."""
     return (
         db.query(User)
-        .filter(User.role.in_(["editor", "admin"]), User.is_active == True)
+        .filter(User.role.in_(["editor", "chef_editor", "admin"]), User.is_active == True)
         .order_by(User.name)
         .all()
     )

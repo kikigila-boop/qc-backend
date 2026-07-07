@@ -138,7 +138,7 @@ def assign_pic(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in ("admin", "supervisor"):
+    if current_user.role not in ("admin", "supervisor", "chef_editor"):
         raise HTTPException(status_code=403, detail="Admin/supervisor only")
 
     entry = db.query(OnAirEntry).filter(OnAirEntry.id == entry_id).first()

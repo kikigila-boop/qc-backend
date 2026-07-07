@@ -116,7 +116,7 @@ def reqc(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in ("admin", "material_handling", "editor"):
+    if current_user.role not in ("admin", "material_handling", "editor", "chef_editor"):
         raise HTTPException(403, "Akses ditolak")
 
     item = db.query(QCContent).filter(QCContent.id == content_id).first()

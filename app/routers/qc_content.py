@@ -340,7 +340,7 @@ def revise_content(
                 detail=f"Tim CMS hanya bisa revisi saat status 'Ingesting'. "
                        f"Status saat ini: '{current_status.value}'.",
             )
-    elif role == "editor":
+    elif role in ("editor", "chef_editor"):
         # Editor cannot initiate a revise — that comes from CMS
         raise HTTPException(
             status_code=403,
@@ -395,7 +395,7 @@ def set_naming_asset(
     current_user: User = Depends(get_current_user),
 ):
     """CMS or Editor can set/update the naming asset for a content."""
-    if current_user.role not in ("cms", "editor", "admin"):
+    if current_user.role not in ("cms", "editor", "chef_editor", "admin"):
         raise HTTPException(403, "Akses ditolak")
     content = db.query(QCContent).filter(QCContent.id == content_id).first()
     if not content:

@@ -166,7 +166,7 @@ def claim_content(
     Editor claims one or more Material Avail items.
     Sets editor_id, editor_name, status → QC Process.
     """
-    if current_user.role not in ("editor", "admin"):
+    if current_user.role not in ("editor", "chef_editor", "admin"):
         raise HTTPException(status_code=403, detail="Hanya Editor / Admin yang bisa claim konten.")
 
     contents = db.query(QCContent).filter(
@@ -202,7 +202,7 @@ def return_to_mh(
     Editor returns content to MH — material has issues.
     Status → Material Revised, MH gets notified.
     """
-    if current_user.role not in ("editor", "admin"):
+    if current_user.role not in ("editor", "chef_editor", "admin"):
         raise HTTPException(status_code=403, detail="Hanya Editor / Admin.")
 
     content = db.query(QCContent).filter(QCContent.id == content_id).first()
