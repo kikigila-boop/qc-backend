@@ -76,7 +76,7 @@ class QCContentOut(BaseModel):
     cast: Optional[str]
     storage_location: Optional[str]
     notes: Optional[str]
-    qc_result: QCResult
+        qc_result: Optional[QCResult] = None
     status: StatusEnum
     mh_name: Optional[str] = None            # Material Handling person who input this
     editor_name: Optional[str] = None         # set when editor claims or creates directly
