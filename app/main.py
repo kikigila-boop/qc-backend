@@ -95,6 +95,7 @@ def run_migrations():
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS pic_name VARCHAR(150)",
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS pic_assigned_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS job_status VARCHAR(20)",
+                "ALTER TABLE qc_error_types ADD COLUMN IF NOT EXISTS description TEXT"
     ]
     for stmt in migrations:
         try:
