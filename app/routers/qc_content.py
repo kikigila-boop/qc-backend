@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel
 from ..models.qc_content import SubtitleTask, SubtitleStatus
 from ..services.subtitle_service import generate_subtitle_tasks, generate_tasks
+from ..models.library import LibraryEntry, LibraryIdCounter
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List, Optional
@@ -43,14 +44,6 @@ def _log_change(db, content_id, field, old, new, user_id=None, by_name=None):
 
 
 def _validate_workflow(current: StatusEnum, new: StatusEnum):
-    """
-    Validate status transitions.
-    Normal: must move forward in STATUS_ORDER.
-    Special cases:
-      - MATERIAL_AVAIL → QC_PROCESS  (editor claims — handled via /material/claim)
-      - REVISED → QC_PROCESS         (backward compat)
-      - NEED_REVISED → READY_TO_INGEST  (editor re-submits after CMS revision)
-    """
     if current == StatusEnum.MATERIAL_AVAIL and new == StatusEnum.QC_PROCESS:
         return
     if current == StatusEnum.REVISED and new == StatusEnum.QC_PROCESS:
@@ -69,7 +62,6 @@ def _validate_workflow(current: StatusEnum, new: StatusEnum):
 
 
 def _notify_editor(db, content, background_tasks, title, body, url):
-    """Send in-app + push notification to the content's editor."""
     editor_id = content.editor_id
     if not editor_id and content.editor_name:
         user = db.query(User).filter(
@@ -87,7 +79,6 @@ def _notify_editor(db, content, background_tasks, title, body, url):
 
 
 def _notify_cms(db, content, background_tasks, title, body, url):
-    """Send in-app + push notification to the entire CMS role."""
     try:
         notification_service.create_for_role(db, "cms", title, body, url)
     except Exception:
@@ -108,15 +99,12 @@ def create_qc(
     if not data.get('qc_date'):
         data['qc_date'] = datetime.utcnow()
 
-    # Role-based initial status
     if current_user.role == "material_handling":
         data['status'] = StatusEnum.MATERIAL_AVAIL
         data['mh_name'] = current_user.name
-        # editor_name can be blank when MH creates
         if not data.get('editor_name'):
             data['editor_name'] = None
     else:
-        # Editor / Admin: direct QC pipeline
         data['status'] = StatusEnum.QC_PROCESS
         if not data.get('editor_name'):
             data['editor_name'] = current_user.name
@@ -133,6 +121,47 @@ def create_qc(
                 user_id=current_user.id, by_name=current_user.name)
     db.commit()
     db.refresh(content)
+
+    # Auto-create LibraryEntry when material_handling adds content
+    if current_user.role == "material_handling":
+        try:
+            _platform_label = "vshort" if (content.platform or "").lower() == "vshort" else "vplus"
+            _lib_label = "VShort" if _platform_label == "vshort" else "VPlus"
+            _existing = db.query(LibraryEntry).filter(
+                LibraryEntry.title_id == content.title,
+                LibraryEntry.platform == _platform_label
+            ).first()
+            if not _existing:
+                _counter = (
+                    db.query(LibraryIdCounter)
+                    .filter(LibraryIdCounter.platform == _lib_label)
+                    .with_for_update()
+                    .first()
+                )
+                if _counter is None:
+                    _counter = LibraryIdCounter(platform=_lib_label, counter=1)
+                    db.add(_counter)
+                else:
+                    _counter.counter += 1
+                db.flush()
+                _lib_id = f"{datetime.utcnow().strftime('%Y%m%d')}-{_lib_label}-{_counter.counter:04d}"
+                _lib_entry = LibraryEntry(
+                    library_id=_lib_id,
+                    platform=_platform_label,
+                    title_id=content.title,
+                    creation_date=datetime.utcnow().strftime("%Y-%m-%d"),
+                    provider=content.mh_name,
+                )
+                db.add(_lib_entry)
+                try:
+                    content.library_id = _lib_id
+                except Exception:
+                    pass
+                db.commit()
+                db.refresh(content)
+        except Exception as _lib_err:
+            print(f"[library] auto-create skipped: {_lib_err}")
+
     if content.with_subs:
         generate_subtitle_tasks(db, content, selected_languages)
     if content.with_dubb:
@@ -141,7 +170,6 @@ def create_qc(
     row = _enrich(content, db)
     background_tasks.add_task(sync_row, row)
 
-    # Notify CMS to fill in naming asset
     _notify_cms(db, content, background_tasks,
                 "Konten Baru — Perlu Naming Asset",
                 f"{content.title} (Eps {content.episode}) ditambahkan. Mohon isi Naming Asset.",
@@ -194,13 +222,11 @@ def list_qc(
     return [_enrich(item, db) for item in items]
 
 
-# ─── Needs Naming endpoint (CMS worklist) ────────────────────────────────────
 @router.get("/needs-naming", response_model=List[QCContentOut])
 def list_needs_naming(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return all content items where naming_asset is NULL or empty — for CMS tab."""
     if current_user.role not in ("cms", "admin"):
         raise HTTPException(403, "Akses ditolak")
     items = (
@@ -269,7 +295,6 @@ def transition_status(
 
     role = current_user.role
 
-    # Role guards for CMS-only transitions
     if payload.new_status in (StatusEnum.INGESTING, StatusEnum.DONE_INGEST):
         if role not in ("cms", "admin"):
             raise HTTPException(
@@ -298,9 +323,7 @@ def transition_status(
     notif_body = f"{content.title} - Eps {content.episode}"
     notif_url = f"/qc/{content.id}"
 
-    # Notify CMS when ready to ingest (editor submitted) or re-submitted after Need Revised
     if payload.new_status == StatusEnum.READY_TO_INGEST:
-        # Check if naming_asset is empty — warn CMS if so
         if not content.naming_asset:
             _notify_cms(db, content, background_tasks,
                         "⚠️ Naming Asset Belum Diisi!",
@@ -321,10 +344,6 @@ def revise_content(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    CMS marks content as Need Revised during Ingesting.
-    Sets status to Need Revised and notifies the editor.
-    """
     content = db.query(QCContent).filter(QCContent.id == content_id).first()
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
@@ -333,7 +352,6 @@ def revise_content(
     current_status = content.status
 
     if role == "cms":
-        # CMS can only revise when status is Ingesting
         if current_status != StatusEnum.INGESTING:
             raise HTTPException(
                 status_code=403,
@@ -341,12 +359,10 @@ def revise_content(
                        f"Status saat ini: '{current_status.value}'.",
             )
     elif role in ("editor", "chef_editor"):
-        # Editor cannot initiate a revise — that comes from CMS
         raise HTTPException(
             status_code=403,
             detail="Editor tidak bisa meminta revisi. Gunakan tombol di halaman detail untuk kirim ulang.",
         )
-    # admin: no restriction
 
     old_status = content.status
     content.status = StatusEnum.NEED_REVISED
@@ -363,7 +379,6 @@ def revise_content(
     row = _enrich(content, db)
     background_tasks.add_task(sync_row, row)
 
-    # Notify editor
     notif_body = f"{content.title} - Eps {content.episode}"
     notif_url = f"/qc/{content.id}"
     _notify_editor(db, content, background_tasks, "Konten Perlu Direvisi", notif_body, notif_url)
@@ -394,7 +409,6 @@ def set_naming_asset(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """CMS or Editor can set/update the naming asset for a content."""
     if current_user.role not in ("cms", "editor", "chef_editor", "admin"):
         raise HTTPException(403, "Akses ditolak")
     content = db.query(QCContent).filter(QCContent.id == content_id).first()
