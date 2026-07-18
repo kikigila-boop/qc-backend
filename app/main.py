@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from .database import Base, engine
-from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export, material, delivery, request, logbook, subs, on_air, qc_error_types, qc_results
+from .routers import auth, users, qc_content, dashboard, cms, admin, push, notifications, export, material, delivery, request, logbook, subs, on_air, qc_error_types, qc_results, library
 from .models.push_subscription import PushSubscription  # noqa: F401
 from .models.notification import UserNotification  # noqa: F401
 from .models.delivery import Delivery  # noqa: F401
@@ -86,16 +86,56 @@ def run_migrations():
         "ALTER TABLE content_requests ADD COLUMN IF NOT EXISTS received_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS with_dubb BOOLEAN DEFAULT FALSE",
         "ALTER TABLE subtitle_tasks ADD COLUMN IF NOT EXISTS task_type VARCHAR(10) NOT NULL DEFAULT 'subs'",
-        # on_air_entries airing columns
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS is_aired BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS aired_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS aired_by VARCHAR(100)",
-        # on_air PIC & job columns
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS pic_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL",
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS pic_name VARCHAR(150)",
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS pic_assigned_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS job_status VARCHAR(20)",
-                "ALTER TABLE qc_error_types ADD COLUMN IF NOT EXISTS description TEXT"
+        "ALTER TABLE qc_error_types ADD COLUMN IF NOT EXISTS description TEXT",
+        """CREATE TABLE IF NOT EXISTS library_entries (
+            id SERIAL PRIMARY KEY,
+            library_id VARCHAR(60) UNIQUE NOT NULL,
+            platform VARCHAR(20),
+            creation_date VARCHAR(20),
+            provider VARCHAR(100),
+            type VARCHAR(20),
+            show_type VARCHAR(50),
+            content_type VARCHAR(50),
+            qc_status VARCHAR(20),
+            title_en VARCHAR(300),
+            title_id VARCHAR(300),
+            summary_long_en TEXT,
+            summary_long_id TEXT,
+            summary_short_en TEXT,
+            summary_short_id TEXT,
+            rating VARCHAR(20),
+            run_time VARCHAR(20),
+            display_run_time VARCHAR(20),
+            country_of_origin VARCHAR(10),
+            genre VARCHAR(100),
+            actors TEXT,
+            directors VARCHAR(300),
+            producers VARCHAR(300),
+            studio_name VARCHAR(200),
+            languages VARCHAR(200),
+            subtitle_languages VARCHAR(200),
+            season_number INTEGER,
+            year INTEGER,
+            ingestion_date VARCHAR(20),
+            qc_date VARCHAR(20),
+            material_date VARCHAR(20),
+            airing_date VARCHAR(20),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_library_entries_library_id ON library_entries(library_id)",
+        """CREATE TABLE IF NOT EXISTS library_id_counters (
+            id SERIAL PRIMARY KEY,
+            platform VARCHAR(20) UNIQUE NOT NULL,
+            counter INTEGER NOT NULL DEFAULT 0
+        )""",
     ]
     for stmt in migrations:
         try:
@@ -104,8 +144,6 @@ def run_migrations():
                 conn.commit()
         except Exception as e:
             print(f"[migration] skipped: {stmt[:60]}… → {e}")
-
-
 
 
 def seed_admin():
@@ -161,7 +199,6 @@ try:
             db.close()
 
     _scheduler = BackgroundScheduler(timezone="Asia/Jakarta")
-    # Every day at 07:00 WIB
     _scheduler.add_job(_scheduled_on_air_sync, CronTrigger(hour=7, minute=0))
     _scheduler.start()
     print("[scheduler] On Air daily sync scheduled at 07:00 WIB")
@@ -210,6 +247,7 @@ app.include_router(subs.router, prefix=API_PREFIX)
 app.include_router(on_air.router, prefix=API_PREFIX)
 app.include_router(qc_error_types.router, prefix=API_PREFIX)
 app.include_router(qc_results.router, prefix=API_PREFIX)
+app.include_router(library.router, prefix=API_PREFIX)
 
 
 @app.get("/", tags=["Health"])
