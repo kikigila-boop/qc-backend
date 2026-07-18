@@ -86,6 +86,55 @@ def _notify_cms(db, content, background_tasks, title, body, url):
     background_tasks.add_task(push_service.send_push_to_role, db, "cms", title, body, url)
 
 
+def _ensure_library_entry(db: Session, content: QCContent):
+    """Auto-create a LibraryEntry for every new QC content if one doesn't exist yet."""
+    try:
+        _platform_label = "vshort" if (content.platform or "").lower() == "vshort" else "vplus"
+        _lib_label = "VShort" if _platform_label == "vshort" else "VPlus"
+        _existing = db.query(LibraryEntry).filter(
+            LibraryEntry.title_id == content.title,
+            LibraryEntry.platform == _platform_label
+        ).first()
+        if _existing:
+            # Link library_id back to content if not set yet
+            if not content.library_id:
+                try:
+                    content.library_id = _existing.library_id
+                    db.commit()
+                except Exception:
+                    pass
+            return
+        _counter = (
+            db.query(LibraryIdCounter)
+            .filter(LibraryIdCounter.platform == _lib_label)
+            .with_for_update()
+            .first()
+        )
+        if _counter is None:
+            _counter = LibraryIdCounter(platform=_lib_label, counter=1)
+            db.add(_counter)
+        else:
+            _counter.counter += 1
+        db.flush()
+        _lib_id = f"{datetime.utcnow().strftime('%Y%m%d')}-{_lib_label}-{_counter.counter:04d}"
+        _lib_entry = LibraryEntry(
+            library_id=_lib_id,
+            platform=_platform_label,
+            title_id=content.title,
+            creation_date=datetime.utcnow().strftime("%Y-%m-%d"),
+            provider=content.mh_name,
+        )
+        db.add(_lib_entry)
+        try:
+            content.library_id = _lib_id
+        except Exception:
+            pass
+        db.commit()
+        db.refresh(content)
+    except Exception as _lib_err:
+        print(f"[library] auto-create skipped: {_lib_err}")
+
+
 # ─── endpoints ──────────────────────────────────────────────────────────────
 
 @router.post("", response_model=QCContentOut, status_code=201)
@@ -122,45 +171,9 @@ def create_qc(
     db.commit()
     db.refresh(content)
 
-    # Auto-create LibraryEntry when material_handling adds content
-    if current_user.role == "material_handling":
-        try:
-            _platform_label = "vshort" if (content.platform or "").lower() == "vshort" else "vplus"
-            _lib_label = "VShort" if _platform_label == "vshort" else "VPlus"
-            _existing = db.query(LibraryEntry).filter(
-                LibraryEntry.title_id == content.title,
-                LibraryEntry.platform == _platform_label
-            ).first()
-            if not _existing:
-                _counter = (
-                    db.query(LibraryIdCounter)
-                    .filter(LibraryIdCounter.platform == _lib_label)
-                    .with_for_update()
-                    .first()
-                )
-                if _counter is None:
-                    _counter = LibraryIdCounter(platform=_lib_label, counter=1)
-                    db.add(_counter)
-                else:
-                    _counter.counter += 1
-                db.flush()
-                _lib_id = f"{datetime.utcnow().strftime('%Y%m%d')}-{_lib_label}-{_counter.counter:04d}"
-                _lib_entry = LibraryEntry(
-                    library_id=_lib_id,
-                    platform=_platform_label,
-                    title_id=content.title,
-                    creation_date=datetime.utcnow().strftime("%Y-%m-%d"),
-                    provider=content.mh_name,
-                )
-                db.add(_lib_entry)
-                try:
-                    content.library_id = _lib_id
-                except Exception:
-                    pass
-                db.commit()
-                db.refresh(content)
-        except Exception as _lib_err:
-            print(f"[library] auto-create skipped: {_lib_err}")
+    # Auto-create LibraryEntry for every new content
+    _ensure_library_entry(db, content)
+    db.refresh(content)
 
     if content.with_subs:
         generate_subtitle_tasks(db, content, selected_languages)
@@ -355,8 +368,7 @@ def revise_content(
         if current_status != StatusEnum.INGESTING:
             raise HTTPException(
                 status_code=403,
-                detail=f"Tim CMS hanya bisa revisi saat status 'Ingesting'. "
-                       f"Status saat ini: '{current_status.value}'.",
+                detail=f"Tim CMS hanya bisa revisi saat status 'Ingesting'. Status saat ini: '{current_status.value}'.",
             )
     elif role in ("editor", "chef_editor"):
         raise HTTPException(
