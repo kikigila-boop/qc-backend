@@ -252,7 +252,7 @@ def return_to_mh(
 
 # âââ Library ID endpoint ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-@router.post("/{content_id}/create-job", response_model=QCContentOut)
+@router.patch("/{content_id}/create-job", response_model=QCContentOut)
 def create_library_id_for_content(
     content_id: int,
     library_id: Optional[str] = Query(None),
