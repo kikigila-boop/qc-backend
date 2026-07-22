@@ -85,6 +85,7 @@ def run_migrations():
         "ALTER TABLE content_requests ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE content_requests ADD COLUMN IF NOT EXISTS received_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS with_dubb BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE qc_content ADD COLUMN IF NOT EXISTS library_id VARCHAR(60)",
         "ALTER TABLE subtitle_tasks ADD COLUMN IF NOT EXISTS task_type VARCHAR(10) NOT NULL DEFAULT 'subs'",
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS is_aired BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE on_air_entries ADD COLUMN IF NOT EXISTS aired_at TIMESTAMP WITH TIME ZONE",
