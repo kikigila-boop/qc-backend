@@ -81,6 +81,7 @@ class QCContent(Base):
     platform   = Column(String(100), nullable=True)   # JSON array e.g. '["vshort","vplus"]'
     with_subs  = Column(Boolean, nullable=False, default=False)
     with_dubb  = Column(Boolean, nullable=False, default=False)
+    library_id = Column(String(60), nullable=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
