@@ -20,6 +20,7 @@ class QCContentCreate(BaseModel):
     platform: Optional[str] = None      # JSON: '["vshort"]' or '["vshort","vplus"]'
     with_subs: bool = False
     with_dubb: bool = False
+    library_id: Optional[str] = None
     selected_languages: Optional[List[str]] = None
     selected_dubb_languages: Optional[List[str]] = None
     storage_location: Optional[str] = None
